@@ -7,7 +7,7 @@ cache.py — Cache persistant pour MangaArr
 import os, json, time, threading, re, unicodedata
 from difflib import SequenceMatcher
 
-CACHE_DIR  = os.path.join(os.path.dirname(__file__), ".cache")
+CACHE_DIR  = os.environ.get("MANGAARR_CACHE") or os.path.join(os.path.dirname(__file__), ".cache")
 CACHE_FILE = os.path.join(CACHE_DIR, "metadata_cache.json")
 
 _mem_cache = {}

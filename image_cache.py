@@ -27,9 +27,9 @@ _LOCK = threading.Lock()
 def _cache_dir() -> str:
     try:
         import config as _cfg
-        base = _cfg.get("_cache_dir") or os.path.join(os.path.dirname(__file__), ".cache")
+        base = _cfg.get("_cache_dir") or os.environ.get("MANGAARR_CACHE") or os.path.join(os.path.dirname(__file__), ".cache")
     except Exception:
-        base = os.path.join(os.path.dirname(__file__), ".cache")
+        base = os.environ.get("MANGAARR_CACHE") or os.path.join(os.path.dirname(__file__), ".cache")
     d = os.path.join(base, "covers")
     os.makedirs(d, exist_ok=True)
     return d
