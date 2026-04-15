@@ -1026,21 +1026,23 @@ def api_search_tomes(series_slug):
         best_by_tome = _ebdz.get_best_ed2k_per_tome(raw_links)
 
         # Tomes possédés sur disque
-        tomes_owned = {t["numero"] for t in series_info.get("tomes", []) if t["numero"]}
+        tomes_owned    = {t["numero"] for t in series_info.get("tomes", []) if t["numero"]}
+        tomes_by_num   = {t["numero"]: t["filename"] for t in series_info.get("tomes", []) if t["numero"]}
 
         tomes = []
         for tome_str, parsed in sorted(best_by_tome.items()):
             n      = int(str(tome_str).lstrip("T").lstrip("0") or "0")
             tomes.append({
-                "tome_str":  tome_str,
-                "numero":    n,
-                "filename":  parsed.get("filename", ""),
-                "tag":       parsed.get("tag", ""),
-                "url":       parsed.get("url", ""),
-                "filehash":  parsed.get("filehash", ""),
-                "filesize":  parsed.get("filesize", 0),
-                "owned":     n in tomes_owned,
-                "in_queue":  any(
+                "tome_str":   tome_str,
+                "numero":     n,
+                "filename":   parsed.get("filename", ""),
+                "tag":        parsed.get("tag", ""),
+                "url":        parsed.get("url", ""),
+                "filehash":   parsed.get("filehash", ""),
+                "filesize":   parsed.get("filesize", 0),
+                "owned":      n in tomes_owned,
+                "owned_file": tomes_by_num.get(n, "") if n in tomes_owned else "",
+                "in_queue":   any(
                     i.get("filehash") == parsed.get("filehash")
                     for i in queue_manager.get_queue()
                 ),
@@ -1069,6 +1071,8 @@ def api_add_tomes_to_queue(series_slug):
 
     items = []
     for t in tomes_data:
+        owned_file = t.get("owned_file", "")
+        action     = "upgrade" if owned_file else t.get("action", "missing")
         items.append({
             "filename":    t.get("filename", ""),
             "filesize":    t.get("filesize", 0),
@@ -1079,7 +1083,8 @@ def api_add_tomes_to_queue(series_slug):
             "series_name": series_info["name"],
             "series_id":   series_info["id"],
             "series_slug": series_info["slug"],
-            "action":      t.get("action", "missing"),
+            "action":      action,
+            "owned_file":  owned_file,
         })
 
     r       = queue_manager.add_to_queue(items)
