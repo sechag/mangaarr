@@ -687,35 +687,6 @@
         Pour changer : modifie le volume et la variable <code>MANGAARR_DEST</code> dans ton <code>docker-compose.yml</code>, puis redémarre le container.
       </p>
     </div>
-    <div class="settings-card">
-      <h2>Traitement automatique</h2>
-      <p class="hint">Lorsqu'un fichier est détecté comme terminé dans le dossier Incoming, MangaArr peut le traiter automatiquement.</p>
-      <div class="toggle-row">
-        <div>
-          <strong>Copie automatique vers le dossier série</strong>
-          <p>Copie le fichier dans le sous-dossier de la série correspondante dans le dossier de destination</p>
-        </div>
-        <label class="toggle"><input type="checkbox" id="toggle-auto-organize"><span class="toggle-slider"></span></label>
-      </div>
-      <div class="toggle-row">
-        <div>
-          <strong>Conversion automatique (CBR/PDF → CBZ)</strong>
-          <p>Convertit les fichiers CBR et PDF en CBZ avant la copie (selon les réglages Media Management)</p>
-        </div>
-        <label class="toggle"><input type="checkbox" id="toggle-auto-convert"><span class="toggle-slider"></span></label>
-      </div>
-      <div class="toggle-row">
-        <div>
-          <strong>Renommage automatique après copie</strong>
-          <p>Renomme le fichier au format MangaArr après la copie (utilise les règles de Settings &gt; Profiles)</p>
-        </div>
-        <label class="toggle"><input type="checkbox" id="toggle-rename"><span class="toggle-slider"></span></label>
-      </div>
-      <div class="form-actions">
-        <button class="btn btn-primary" onclick="saveIncomingSettings()">Sauvegarder</button>
-        <span id="incoming-settings-status" class="status-msg"></span>
-      </div>
-    </div>
   </div>
 
 
