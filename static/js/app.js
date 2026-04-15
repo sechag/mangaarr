@@ -984,8 +984,9 @@ async function _loadQueueLibrarySelect() {
   sel.innerHTML = html;
 }
 
-let _allQueueItems = [];     // Cache complet pour filtre/tri/pagination locale
+let _allQueueItems  = [];     // Cache complet pour filtre/tri/pagination locale
 let _queueSortDir   = 'asc'; // 'asc' | 'desc'
+let _upgradeQueuePage = 1;
 
 async function refreshQueue(page = 1) {
   _queuePage = page;
@@ -1019,11 +1020,17 @@ function filterQueueTable() {
   const missingItems  = items.filter(i => i.action !== 'upgrade');
   const upgradeItems  = items.filter(i => i.action === 'upgrade');
 
-  // Pagination sur les ajouts uniquement
-  const total = missingItems.length;
-  const start = (_queuePage - 1) * QUEUE_PAGE_SIZE;
-  renderQueueTable(missingItems.slice(start, start + QUEUE_PAGE_SIZE), upgradeItems);
-  renderQueuePagination(total);
+  // Pagination ajouts
+  const totalMissing = missingItems.length;
+  const startMissing = (_queuePage - 1) * QUEUE_PAGE_SIZE;
+  renderQueueTable(missingItems.slice(startMissing, startMissing + QUEUE_PAGE_SIZE), upgradeItems);
+  renderQueuePagination(totalMissing);
+
+  // Pagination upgrades
+  const totalUpgrade = upgradeItems.length;
+  const startUpgrade = (_upgradeQueuePage - 1) * QUEUE_PAGE_SIZE;
+  renderUpgradeTable(upgradeItems.slice(startUpgrade, startUpgrade + QUEUE_PAGE_SIZE));
+  renderUpgradePagination(totalUpgrade);
 
   // Affiche/masque les sections vides
   const emptyGlobal = document.getElementById('queue-empty');
@@ -1049,33 +1056,46 @@ function renderQueueStats(stats) {
     <div class="queue-stat"><div class="queue-stat-val" style="color:var(--success)">${stats.done||0}</div><div class="queue-stat-lbl">Terminé</div></div>`;
 }
 
-function renderQueueTable(items, upgradeItems) {
-  const tbody        = document.getElementById('queue-tbody');
-  const tbodyUpgrade = document.getElementById('queue-tbody-upgrade');
-  const emptyMissing = document.getElementById('queue-empty-missing');
-  const emptyUpgrade = document.getElementById('queue-empty-upgrade');
+function renderUpgradeTable(items) {
+  const tbody = document.getElementById('queue-tbody-upgrade');
+  const empty = document.getElementById('queue-empty-upgrade');
+  if (!tbody) return;
+  if (empty) empty.style.display = !items.length ? '' : 'none';
+  tbody.innerHTML = items.map((item, _itemIdx) => _renderQueueRow(item, _itemIdx)).join('');
+}
 
-  // Section ajouts
-  if (emptyMissing) emptyMissing.style.display = !items.length ? '' : 'none';
-
-  // Section upgrades
-  if (tbodyUpgrade) {
-    if (emptyUpgrade) emptyUpgrade.style.display = !upgradeItems?.length ? '' : 'none';
-    if (upgradeItems?.length) {
-      tbodyUpgrade.innerHTML = upgradeItems.map((item, _itemIdx) => {
-        return _renderQueueRow(item, _itemIdx);
-      }).join('');
-    } else {
-      tbodyUpgrade.innerHTML = '';
-    }
+function renderUpgradePagination(total) {
+  const el = document.getElementById('queue-pagination-upgrade');
+  if (!el) return;
+  const totalPages = Math.ceil(total / QUEUE_PAGE_SIZE);
+  if (totalPages <= 1) { el.innerHTML = ''; return; }
+  let html = `<button class="page-btn" onclick="goUpgradePage(${_upgradeQueuePage-1})" ${_upgradeQueuePage===1?'disabled':''}>‹</button>`;
+  for (let p = 1; p <= totalPages; p++) {
+    html += `<button class="page-btn${p===_upgradeQueuePage?' active':''}" onclick="goUpgradePage(${p})">${p}</button>`;
   }
+  html += `<button class="page-btn" onclick="goUpgradePage(${_upgradeQueuePage+1})" ${_upgradeQueuePage===totalPages?'disabled':''}>›</button>`;
+  el.innerHTML = html;
+}
+
+function goUpgradePage(p) {
+  const totalPages = Math.ceil(_allQueueItems.filter(i => i.action === 'upgrade').length / QUEUE_PAGE_SIZE);
+  if (p < 1 || p > totalPages) return;
+  _upgradeQueuePage = p;
+  filterQueueTable();
+}
+
+function renderQueueTable(items) {
+  const tbody        = document.getElementById('queue-tbody');
+  const emptyMissing = document.getElementById('queue-empty-missing');
+
+  if (emptyMissing) emptyMissing.style.display = !items.length ? '' : 'none';
 
   if (!items.length) {
     tbody.innerHTML = '';
     return;
   }
 
-  _emulePendingList = items;  // référence pour openPendingActionModal
+  _emulePendingList = items;  // référence pour openPendingActionModal (ajouts)
 
   tbody.innerHTML = items.map((item, _itemIdx) => _renderQueueRow(item, _itemIdx)).join('');
 }
@@ -1117,10 +1137,10 @@ function _renderQueueRow(item, _itemIdx) {
       ? `<input type="checkbox" class="emule-item-chk" value="${esc(item.filehash)}" onchange="_onEmuleCheckChange()">`
       : '';
 
-    const emulePendingBtn = isAP
+    const emulePendingBtn = isAP && item.filehash
       ? `<button class="btn-info-hist" title="Cliquez pour gérer le conflit"
                style="margin-left:4px;background:var(--warning,#f59e0b);color:#000;border-radius:4px;padding:2px 6px;font-size:11px;font-weight:700;cursor:pointer"
-               onclick="_openEmulePending(${_itemIdx})">▶ Gérer</button>`
+               onclick="_openEmulePending('${esc(item.filehash)}')">▶ Gérer</button>`
       : '';
 
     return `<tr data-series="${esc((item.series_name||'').toLowerCase())}">
@@ -2415,7 +2435,10 @@ async function deleteSelectedTorrent() {
 // MODAL ACTION EN ATTENTE (conflits upgrade)
 // ═══════════════════════════════════════════════════
 
-function _openEmulePending(idx)   { openPendingActionModal(_emulePendingList[idx]);   }
+function _openEmulePending(filehash) {
+  const item = _allQueueItems.find(i => i.filehash === filehash);
+  if (item) openPendingActionModal(item);
+}
 function _openTorrentPending(idx) { openPendingActionModal(_torrentPendingList[idx]); }
 
 function openPendingActionModal(item) {
