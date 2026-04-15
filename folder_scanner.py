@@ -79,7 +79,7 @@ def scan_series_on_disk(root_dir: str) -> dict:
 # COMPARAISON AVEC EBDZ
 # ════════════════════════════════════════════════════════
 
-def detect_missing_from_disk(root_dir: str, progress_cb=None, serie_filter: str = None) -> dict:
+def detect_missing_from_disk(root_dir: str, progress_cb=None, serie_filter: str = None, mode: str = None) -> dict:
     """
     Analyse le dossier disque et retourne les tomes manquants.
 
@@ -207,6 +207,10 @@ def detect_missing_from_disk(root_dir: str, progress_cb=None, serie_filter: str 
             "available": len(best_by_tome),
             "missing":   len(new_items),
         })
+
+    # Filtre par mode si demandé ("missing" ou "upgrade")
+    if mode in ("missing", "upgrade"):
+        all_new_items = [i for i in all_new_items if i.get("action") == mode]
 
     # Ajoute TOUS les items en une seule écriture disque
     total_added = queue_manager.add_to_queue(all_new_items)

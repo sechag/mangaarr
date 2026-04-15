@@ -1015,11 +1015,19 @@ function filterQueueTable() {
     return _queueSortDir === 'asc' ? na.localeCompare(nb) : nb.localeCompare(na);
   });
 
-  // Pagination locale
-  const total = items.length;
+  // Sépare les ajouts et les upgrades
+  const missingItems  = items.filter(i => i.action !== 'upgrade');
+  const upgradeItems  = items.filter(i => i.action === 'upgrade');
+
+  // Pagination sur les ajouts uniquement
+  const total = missingItems.length;
   const start = (_queuePage - 1) * QUEUE_PAGE_SIZE;
-  renderQueueTable(items.slice(start, start + QUEUE_PAGE_SIZE));
+  renderQueueTable(missingItems.slice(start, start + QUEUE_PAGE_SIZE), upgradeItems);
   renderQueuePagination(total);
+
+  // Affiche/masque les sections vides
+  const emptyGlobal = document.getElementById('queue-empty');
+  if (emptyGlobal) emptyGlobal.style.display = (!missingItems.length && !upgradeItems.length) ? '' : 'none';
 }
 
 function sortQueueBy(col) {
@@ -1041,19 +1049,38 @@ function renderQueueStats(stats) {
     <div class="queue-stat"><div class="queue-stat-val" style="color:var(--success)">${stats.done||0}</div><div class="queue-stat-lbl">Terminé</div></div>`;
 }
 
-function renderQueueTable(items) {
-  const tbody = document.getElementById('queue-tbody');
-  const empty = document.getElementById('queue-empty');
+function renderQueueTable(items, upgradeItems) {
+  const tbody        = document.getElementById('queue-tbody');
+  const tbodyUpgrade = document.getElementById('queue-tbody-upgrade');
+  const emptyMissing = document.getElementById('queue-empty-missing');
+  const emptyUpgrade = document.getElementById('queue-empty-upgrade');
+
+  // Section ajouts
+  if (emptyMissing) emptyMissing.style.display = !items.length ? '' : 'none';
+
+  // Section upgrades
+  if (tbodyUpgrade) {
+    if (emptyUpgrade) emptyUpgrade.style.display = !upgradeItems?.length ? '' : 'none';
+    if (upgradeItems?.length) {
+      tbodyUpgrade.innerHTML = upgradeItems.map((item, _itemIdx) => {
+        return _renderQueueRow(item, _itemIdx);
+      }).join('');
+    } else {
+      tbodyUpgrade.innerHTML = '';
+    }
+  }
+
   if (!items.length) {
     tbody.innerHTML = '';
-    if (empty) empty.style.display = '';
     return;
   }
-  if (empty) empty.style.display = 'none';
 
   _emulePendingList = items;  // référence pour openPendingActionModal
 
-  tbody.innerHTML = items.map((item, _itemIdx) => {
+  tbody.innerHTML = items.map((item, _itemIdx) => _renderQueueRow(item, _itemIdx)).join('');
+}
+
+function _renderQueueRow(item, _itemIdx) {
     const isAP      = item.status === 'action_pending';
     const statusCls = item.status === 'done'        ? 'done'
                     : item.status === 'downloading' ? 'downloading'
@@ -1068,13 +1095,11 @@ function renderQueueTable(items) {
       : `<span>${esc(item.series_name || '—')}</span>`;
     const tomeNum = item.tome_number ? String(item.tome_number).replace('T','') : '?';
 
-    // Bouton ✎ édition tome (eMule — filehash requis)
     const editTomeBtn = item.filehash
       ? `<button class="btn-info-hist" title="Modifier le tome" style="margin-left:4px"
            onclick="editEmuleQueueTome(${esc(JSON.stringify(item))})">✎</button>`
       : '';
 
-    // Bouton info historique (si l'item a été traité)
     const hist = item.history;
     let infoBtn = '';
     if (hist) {
@@ -1106,7 +1131,6 @@ function renderQueueTable(items) {
       <td><span style="font-size:11px;color:var(--text-dim)">${esc(item.tag||'')}</span></td>
       <td style="display:flex;align-items:center;gap:6px;flex-wrap:wrap"><span class="status-pill ${statusCls}">${statusLbl}</span>${emulePendingBtn}${infoBtn}</td>
     </tr>`;
-  }).join('');
 }
 
 function _onEmuleCheckChange() {
@@ -1165,7 +1189,7 @@ async function updateQueueBadge() {
 }
 
 
-async function detectMissing() {
+async function detectMissing(mode) {
   const sel = document.getElementById('queue-series-select');
   const val = sel ? sel.value : '|';  // format: "lib_id|serie_name" ou "lib_id|" ou "|"
 
@@ -1174,6 +1198,7 @@ async function detectMissing() {
   const d = await api('/queue/detect-missing', 'POST', {
     lib_id:     lib_id     || null,
     serie_name: serie_name || null,
+    mode:       mode       || null,
   });
 
   if (!d.ok) {
@@ -1182,9 +1207,10 @@ async function detectMissing() {
   }
 
   const lbl = document.getElementById('queue-dest-label');
-  const label0 = serie_name ? `Analyse de "${serie_name}"…`
-               : lib_id ? `Analyse de la librairie…`
-               : 'Analyse de toutes les librairies…';
+  const modeLabel = mode === 'upgrade' ? 'upgrades' : 'manquants';
+  const label0 = serie_name ? `Analyse de "${serie_name}" (${modeLabel})…`
+               : lib_id ? `Analyse de la librairie (${modeLabel})…`
+               : `Analyse de toutes les librairies (${modeLabel})…`;
   if (lbl) { lbl.textContent = label0; lbl.style.color = 'var(--accent)'; }
 
   // Poll progression

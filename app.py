@@ -1919,6 +1919,7 @@ def api_detect_missing():
     d          = request.json or {}
     lib_id     = d.get("lib_id")       # None = toutes les librairies
     serie_name = d.get("serie_name")   # None = toutes les séries de la lib
+    mode       = d.get("mode")         # None = tout, "missing" ou "upgrade"
 
     libraries = lib_mgr.get_libraries()
     if not libraries:
@@ -1953,6 +1954,7 @@ def api_detect_missing():
                     lib_path,
                     progress_cb=_progress,
                     serie_filter=serie_name,
+                    mode=mode,
                 )
                 total_added += result.get("added", 0)
                 all_details.extend(result.get("details", []))

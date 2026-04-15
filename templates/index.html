@@ -70,10 +70,6 @@
     </a>
 
   </nav>
-  <div class="sidebar-footer">
-    <div class="status-dot" id="komga-status-dot"></div>
-    <span id="komga-status-label">Komga non configuré</span>
-  </div>
 </aside>
 
 <main id="main-content">
@@ -522,10 +518,6 @@
         <div class="tab-pills" style="display:flex;gap:4px;margin-right:8px">
           <button id="tab-queue-emule"   class="tab-pill active" onclick="switchQueueTab('emule')">eMule</button>
           <button id="tab-queue-torrent" class="tab-pill"        onclick="switchQueueTab('torrent')">Torrent <span id="torrent-queue-badge" class="nav-badge" style="display:none;background:var(--accent);color:#000">0</span></button>
-          <button id="tab-queue-monitor" class="tab-pill"        onclick="switchQueueTab('monitor')">
-            <svg viewBox="0 0 20 20" fill="currentColor" style="width:12px;height:12px;margin-right:3px"><path d="M10 12a2 2 0 100-4 2 2 0 000 4z"/><path fill-rule="evenodd" d="M.458 10C1.732 5.943 5.522 3 10 3s8.268 2.943 9.542 7c-1.274 4.057-5.064 7-9.542 7S1.732 14.057.458 10zM14 10a4 4 0 11-8 0 4 4 0 018 0z" clip-rule="evenodd"/></svg>
-            Surveillance
-          </button>
         </div>
         <span id="queue-dest-label" class="status-msg" style="font-size:11px;color:var(--text-dim)"></span>
       </div>
@@ -539,9 +531,13 @@
           <select id="queue-series-select" class="select-input" style="min-width:200px;max-width:320px" title="Sélectionner une série ou toutes">
             <option value="">Toutes les séries</option>
           </select>
-          <button class="btn btn-primary" onclick="detectMissing()">
+          <button class="btn btn-primary" onclick="detectMissing('missing')">
             <svg viewBox="0 0 20 20" fill="currentColor" style="width:14px;height:14px"><path fill-rule="evenodd" d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z" clip-rule="evenodd"/></svg>
             Détecter manquants
+          </button>
+          <button class="btn btn-secondary" onclick="detectMissing('upgrade')">
+            <svg viewBox="0 0 20 20" fill="currentColor" style="width:14px;height:14px"><path fill-rule="evenodd" d="M3 3a1 1 0 000 2h11a1 1 0 100-2H3zm0 4a1 1 0 000 2h7a1 1 0 100-2H3zm0 4a1 1 0 100 2h4a1 1 0 100-2H3zm10-3a1 1 0 10-2 0v4.586l-1.293-1.293a1 1 0 10-1.414 1.414l3 3a1 1 0 001.414 0l3-3a1 1 0 00-1.414-1.414L13 12.586V8z" clip-rule="evenodd"/></svg>
+            Détecter upgrades
           </button>
           <button class="btn btn-secondary" onclick="generateCollection()">
             <svg viewBox="0 0 20 20" fill="currentColor" style="width:14px;height:14px"><path fill-rule="evenodd" d="M3 17a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zM6.293 6.707a1 1 0 010-1.414l3-3a1 1 0 011.414 0l3 3a1 1 0 01-1.414 1.414L11 5.414V13a1 1 0 11-2 0V5.414L7.707 6.707a1 1 0 01-1.414 0z" clip-rule="evenodd"/></svg>
@@ -556,23 +552,51 @@
         </div>
       </div>
       <div id="queue-stats-bar" class="queue-stats-bar"></div>
-      <div class="queue-table-wrap">
-        <table class="queue-table" id="queue-table">
-          <thead>
-            <tr>
-              <th style="width:30px"><input type="checkbox" id="emule-select-all" onchange="toggleSelectAllEmule(this)" title="Tout sélectionner"></th>
-              <th class="queue-th-sortable" onclick="sortQueueBy('series')" style="cursor:pointer;user-select:none">Série <span id="queue-sort-icon">↕</span></th>
-              <th>Fichier</th><th>Tome</th><th>Tag</th><th>Progression</th>
-            </tr>
-          </thead>
-          <tbody id="queue-tbody"></tbody>
-        </table>
-        <div id="queue-empty" class="empty-state" style="display:none">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
-          <p>Aucun téléchargement en queue.<br>Cliquez sur "Détecter manquants" pour lancer une analyse.</p>
+      <!-- Section Ajouts -->
+      <div id="queue-section-missing">
+        <h3 style="font-size:13px;font-weight:600;color:var(--text-dim);margin:12px 0 6px;text-transform:uppercase;letter-spacing:.05em">Ajouts</h3>
+        <div class="queue-table-wrap">
+          <table class="queue-table" id="queue-table">
+            <thead>
+              <tr>
+                <th style="width:30px"><input type="checkbox" id="emule-select-all" onchange="toggleSelectAllEmule(this)" title="Tout sélectionner"></th>
+                <th class="queue-th-sortable" onclick="sortQueueBy('series')" style="cursor:pointer;user-select:none">Série <span id="queue-sort-icon">↕</span></th>
+                <th>Fichier</th><th>Tome</th><th>Tag</th><th>Progression</th>
+              </tr>
+            </thead>
+            <tbody id="queue-tbody"></tbody>
+          </table>
+          <div id="queue-empty-missing" class="empty-state" style="display:none">
+            <p style="color:var(--text-dim);font-size:12px">Aucun ajout en queue.</p>
+          </div>
+        </div>
+        <div id="queue-pagination" class="pagination"></div>
+      </div>
+
+      <!-- Section Upgrades -->
+      <div id="queue-section-upgrade" style="margin-top:16px">
+        <h3 style="font-size:13px;font-weight:600;color:var(--text-dim);margin:12px 0 6px;text-transform:uppercase;letter-spacing:.05em">Upgrades</h3>
+        <div class="queue-table-wrap">
+          <table class="queue-table">
+            <thead>
+              <tr>
+                <th style="width:30px"></th>
+                <th>Série</th>
+                <th>Fichier</th><th>Tome</th><th>Tag</th><th>Progression</th>
+              </tr>
+            </thead>
+            <tbody id="queue-tbody-upgrade"></tbody>
+          </table>
+          <div id="queue-empty-upgrade" class="empty-state" style="display:none">
+            <p style="color:var(--text-dim);font-size:12px">Aucun upgrade en queue.</p>
+          </div>
         </div>
       </div>
-      <div id="queue-pagination" class="pagination"></div>
+
+      <div id="queue-empty" class="empty-state" style="display:none">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+        <p>Aucun téléchargement en queue.<br>Cliquez sur "Détecter manquants" pour lancer une analyse.</p>
+      </div>
       <div class="settings-card" style="margin-top:20px">
         <h2>Fichiers .emulecollection générés</h2>
         <div id="collections-list"></div>
