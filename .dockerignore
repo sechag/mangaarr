@@ -1,0 +1,10 @@
+__pycache__/
+*.pyc
+*.pyo
+.cache/
+config.json
+emulecollections/
+data/
+*.tar.gz
+.git/
+.gitignore

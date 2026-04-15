@@ -1,0 +1,784 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MangaArr — Découverte Torrent</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/static/css/app.css">
+<style>
+/* ── Layout spécifique discover ── */
+.discover-layout {
+  display: flex;
+  height: 100vh;
+  overflow: hidden;
+}
+.discover-left {
+  width: 340px;
+  min-width: 240px;
+  display: flex;
+  flex-direction: column;
+  border-right: 1px solid var(--border);
+  background: var(--bg-card);
+  overflow: hidden;
+}
+.discover-right {
+  flex: 1;
+  overflow-y: auto;
+  padding: 20px 28px;
+  position: relative;
+}
+
+/* ── Barre de contrôle ── */
+.discover-toolbar {
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  background: var(--bg);
+  flex-shrink: 0;
+}
+.toolbar-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.toolbar-label {
+  font-size: 11px;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: .05em;
+  flex-shrink: 0;
+}
+
+/* ── Progress bar ── */
+.scan-progress-wrap {
+  padding: 8px 16px;
+  border-bottom: 1px solid var(--border);
+  display: none;
+  flex-shrink: 0;
+  background: var(--bg-card);
+}
+.scan-progress-wrap.visible { display: block; }
+.progress-bar-outer {
+  height: 4px;
+  background: var(--border);
+  border-radius: 2px;
+  overflow: hidden;
+  margin-bottom: 5px;
+}
+.progress-bar-inner {
+  height: 100%;
+  background: var(--accent);
+  border-radius: 2px;
+  transition: width .3s;
+  width: 0%;
+}
+.progress-label {
+  font-size: 11px;
+  color: var(--text-dim);
+}
+.progress-series {
+  font-size: 11px;
+  color: var(--text-dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ── Liste séries (gauche) ── */
+.series-list {
+  flex: 1;
+  overflow-y: auto;
+}
+.series-list-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px;
+  cursor: pointer;
+  border-bottom: 1px solid var(--border);
+  transition: background .12s;
+  gap: 8px;
+}
+.series-list-item:hover   { background: var(--bg-input); }
+.series-list-item.active  { background: var(--accent-dim); border-left: 3px solid var(--accent); padding-left: 11px; }
+.series-list-item.scanning { opacity: .5; cursor: default; }
+.series-item-name { font-size: 13px; font-weight: 500; color: var(--text-head); line-height: 1.3; }
+.series-item-sub  { font-size: 11px; color: var(--text-dim); margin-top: 2px; }
+.series-rel-badge {
+  flex-shrink: 0;
+  min-width: 22px;
+  height: 22px;
+  padding: 0 7px;
+  border-radius: 11px;
+  background: var(--accent);
+  color: #000;
+  font-size: 10px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.series-rel-badge.integrale { background: var(--warning); }
+.series-rel-badge.scanning {
+  background: var(--border);
+  color: var(--text-dim);
+  animation: pulse 1.4s ease-in-out infinite;
+}
+@keyframes pulse { 0%,100% { opacity:.4 } 50% { opacity:1 } }
+
+/* ── Panneau releases (droite) ── */
+.releases-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 14px;
+}
+.releases-title {
+  font-size: 17px;
+  font-weight: 700;
+  color: var(--text-head);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.releases-title a {
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--accent);
+  text-decoration: none;
+}
+.releases-title a:hover { text-decoration: underline; }
+
+.owned-bar {
+  background: var(--bg-input);
+  border-radius: var(--radius);
+  padding: 8px 12px;
+  margin-bottom: 14px;
+  font-size: 12px;
+  color: var(--text-dim);
+  display: flex;
+  gap: 14px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+/* ── Release cards ── */
+.release-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 12px 14px;
+  margin-bottom: 8px;
+  transition: border-color .15s;
+}
+.release-card:hover { border-color: var(--text-dim); }
+.release-card.integrale { border-color: var(--warning); }
+.release-card.pack      { border-color: var(--accent-2); }
+
+.release-card-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+.release-cb { flex-shrink: 0; margin-top: 2px; accent-color: var(--accent); cursor: pointer; }
+
+.release-card-info { flex: 1; min-width: 0; }
+.release-card-title {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-head);
+  word-break: break-all;
+  margin-bottom: 4px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.type-badge {
+  display: inline-block;
+  padding: 1px 7px;
+  border-radius: 10px;
+  font-size: 10px;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+.type-badge.integrale { background: rgba(243,156,18,.15); color: var(--warning); }
+.type-badge.pack      { background: rgba(123,104,238,.15); color: var(--accent-2); }
+.type-badge.single    { background: var(--accent-dim); color: var(--accent); }
+.type-badge.unknown   { background: var(--bg-input); color: var(--text-dim); }
+
+.release-meta {
+  font-size: 11px;
+  color: var(--text-dim);
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  align-items: center;
+  margin-top: 3px;
+}
+.release-meta a { color: var(--accent); text-decoration: none; }
+.release-meta a:hover { text-decoration: underline; }
+
+.tome-chips { display: flex; gap: 3px; flex-wrap: wrap; margin-top: 7px; }
+.tome-chip {
+  padding: 1px 5px;
+  border-radius: 4px;
+  font-size: 10px;
+  border: 1px solid;
+}
+.tome-chip.missing { background: rgba(243,156,18,.12); color: var(--warning); border-color: var(--warning); }
+.tome-chip.owned   { background: rgba(46,204,113,.1);  color: var(--success); border-color: var(--success); }
+.tome-chip.unknown { background: var(--bg-input); color: var(--text-dim); border-color: var(--border); }
+
+/* ── Barre de téléchargement ── */
+.dl-sticky-bar {
+  position: sticky;
+  bottom: 0;
+  background: var(--bg-card);
+  border-top: 1px solid var(--border);
+  padding: 10px 28px;
+  display: none;
+  align-items: center;
+  gap: 12px;
+  margin: 0 -28px -20px;
+  z-index: 10;
+}
+.dl-sticky-bar.visible { display: flex; }
+
+/* ── Empty states ── */
+.empty-panel {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  color: var(--text-dim);
+  text-align: center;
+  padding: 40px 20px;
+  gap: 12px;
+}
+.empty-panel svg { width: 48px; height: 48px; opacity: .3; }
+.empty-panel p   { font-size: 13px; max-width: 260px; line-height: 1.5; }
+
+/* ── Cache info banner ── */
+.cache-banner {
+  padding: 8px 12px;
+  background: var(--accent-dim);
+  border: 1px solid var(--accent);
+  border-radius: var(--radius);
+  font-size: 12px;
+  color: var(--accent);
+  margin-bottom: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.cache-banner.hidden { display: none; }
+</style>
+</head>
+<body>
+
+<!-- Sidebar identique à la page principale -->
+<aside id="sidebar">
+  <div class="sidebar-logo">
+    <svg viewBox="0 0 36 36" fill="none"><rect width="36" height="36" rx="8" fill="#00b5cc"/><text x="18" y="25" text-anchor="middle" font-size="18" font-weight="700" fill="white" font-family="Inter">M</text></svg>
+    <span>MangaArr</span>
+  </div>
+  <nav class="sidebar-nav">
+    <div class="nav-section-label">Collection</div>
+    <a class="nav-item" href="/">
+      <svg viewBox="0 0 20 20" fill="currentColor"><path d="M2 6a2 2 0 012-2h5l2 2h5a2 2 0 012 2v6a2 2 0 01-2 2H4a2 2 0 01-2-2V6z"/></svg>
+      Collection
+    </a>
+    <div class="nav-section-label">Activity</div>
+    <a class="nav-item" href="/">
+      <svg viewBox="0 0 20 20" fill="currentColor"><path d="M3 4a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm0 4a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm0 4a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm0 4a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1z"/></svg>
+      Queue
+    </a>
+    <a class="nav-item active" href="/discover">
+      <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z" clip-rule="evenodd"/></svg>
+      Découverte Torrent
+    </a>
+    <div class="nav-section-label">Settings</div>
+    <a class="nav-item" href="/">
+      <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M3 17a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm3.293-7.707a1 1 0 011.414 0L9 10.586V3a1 1 0 112 0v7.586l1.293-1.293a1 1 0 111.414 1.414l-3 3a1 1 0 01-1.414 0l-3-3a1 1 0 010-1.414z" clip-rule="evenodd"/></svg>
+      Paramètres
+    </a>
+  </nav>
+  <div class="sidebar-footer">
+    <div class="status-dot"></div>
+    <span>MangaArr</span>
+  </div>
+</aside>
+
+<!-- Contenu principal -->
+<main id="main-content" style="padding:0;overflow:hidden;">
+<div class="discover-layout">
+
+  <!-- ── Panneau gauche : contrôles + liste séries ── -->
+  <div class="discover-left">
+
+    <!-- Titre panneau -->
+    <div style="padding:16px 16px 10px;border-bottom:1px solid var(--border);flex-shrink:0;">
+      <div style="font-size:16px;font-weight:700;color:var(--text-head);margin-bottom:4px">Découverte Torrent</div>
+      <div style="font-size:11px;color:var(--text-dim)" id="panel-subtitle">Séries incomplètes avec releases disponibles</div>
+    </div>
+
+    <!-- Contrôles scan -->
+    <div class="discover-toolbar">
+      <div class="toolbar-row">
+        <span class="toolbar-label">Librairie</span>
+        <select id="lib-select" class="select-input" style="flex:1;min-width:0"></select>
+      </div>
+      <div class="toolbar-row">
+        <span class="toolbar-label">Délai</span>
+        <input type="number" id="delay-input" class="text-input" value="5000" min="500" max="30000" style="width:80px">
+        <span style="font-size:11px;color:var(--text-dim)">ms / requête</span>
+      </div>
+      <div class="toolbar-row" style="gap:6px">
+        <button class="btn btn-primary btn-sm" id="btn-scan" onclick="startScan()" style="flex:1">
+          <svg viewBox="0 0 20 20" fill="currentColor" style="width:13px;height:13px"><path fill-rule="evenodd" d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z" clip-rule="evenodd"/></svg>
+          Scanner
+        </button>
+        <button class="btn btn-secondary btn-sm" id="btn-stop" onclick="stopScan()" style="display:none">
+          ■ Stop
+        </button>
+        <button class="btn btn-secondary btn-sm" onclick="clearCache()" title="Vider le cache">
+          <svg viewBox="0 0 20 20" fill="currentColor" style="width:13px;height:13px"><path fill-rule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clip-rule="evenodd"/></svg>
+        </button>
+      </div>
+    </div>
+
+    <!-- Barre de progression -->
+    <div class="scan-progress-wrap" id="scan-progress">
+      <div class="progress-bar-outer">
+        <div class="progress-bar-inner" id="progress-fill"></div>
+      </div>
+      <div style="display:flex;justify-content:space-between;gap:8px">
+        <span class="progress-label" id="progress-label"></span>
+        <span class="progress-series" id="progress-series"></span>
+      </div>
+    </div>
+
+    <!-- Liste des séries -->
+    <div class="series-list" id="series-list">
+      <div class="empty-panel">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
+        <p>Lance un scan pour trouver des séries avec des releases disponibles.</p>
+      </div>
+    </div>
+
+  </div><!-- /discover-left -->
+
+  <!-- ── Panneau droit : releases de la série sélectionnée ── -->
+  <div class="discover-right" id="releases-panel">
+
+    <!-- Cache banner -->
+    <div class="cache-banner hidden" id="cache-banner">
+      <span id="cache-banner-text"></span>
+      <button class="btn btn-secondary btn-sm" onclick="startScan()">Rescanner</button>
+    </div>
+
+    <!-- Contenu releases -->
+    <div id="releases-content">
+      <div class="empty-panel" style="height:60vh">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+        <p>Sélectionne une série dans la liste pour voir ses releases.</p>
+      </div>
+    </div>
+
+    <!-- Barre de téléchargement sticky -->
+    <div class="dl-sticky-bar" id="dl-bar">
+      <span id="dl-count" style="font-size:13px;color:var(--text-dim)"></span>
+      <select id="dl-client-select" class="select-input" style="min-width:180px"></select>
+      <button class="btn btn-primary" onclick="sendSelected()">
+        <svg viewBox="0 0 20 20" fill="currentColor" style="width:14px;height:14px"><path fill-rule="evenodd" d="M3 17a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm3.293-7.707a1 1 0 011.414 0L9 10.586V3a1 1 0 112 0v7.586l1.293-1.293a1 1 0 111.414 1.414l-3 3a1 1 0 01-1.414 0l-3-3a1 1 0 010-1.414z" clip-rule="evenodd"/></svg>
+        Envoyer vers qBittorrent
+      </button>
+      <span id="dl-status" style="font-size:12px"></span>
+    </div>
+
+  </div><!-- /discover-right -->
+
+</div><!-- /discover-layout -->
+</main>
+
+<script>
+// ══════════════════════════════════════════════════════════════════════
+// ÉTAT GLOBAL
+// ══════════════════════════════════════════════════════════════════════
+const esc = s => String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+
+let _allSeries     = [];    // toutes les séries avec releases (résultats scan)
+let _activeIdx     = -1;    // index série sélectionnée
+let _tomeOverrides = {};    // {seriesId_releaseIdx: [tomes]}
+let _scanSSE       = null;  // EventSource actif
+let _fromCache     = false;
+
+async function api(path, method='GET', body=null) {
+  const opts = { method, headers: {'Content-Type':'application/json'} };
+  if (body) opts.body = JSON.stringify(body);
+  const r = await fetch('/api' + path, opts);
+  return r.json().catch(() => ({}));
+}
+
+// ══════════════════════════════════════════════════════════════════════
+// INIT
+// ══════════════════════════════════════════════════════════════════════
+window.addEventListener('DOMContentLoaded', async () => {
+  // Librairies
+  const d = await api('/libraries');
+  const sel = document.getElementById('lib-select');
+  sel.innerHTML = '<option value="">Toutes les librairies</option>' +
+    (d.libraries||[]).map(l => `<option value="${esc(l.id)}">${esc(l.name)}</option>`).join('');
+
+  // Clients download
+  const dc = await api('/settings/download-clients');
+  const csel = document.getElementById('dl-client-select');
+  csel.innerHTML = (dc.clients||[]).filter(c => c.enabled !== false)
+    .map(c => `<option value="${esc(c.id)}">${esc(c.name)}</option>`).join('');
+
+  // Charge le cache existant
+  await loadCache();
+});
+
+// ══════════════════════════════════════════════════════════════════════
+// CACHE
+// ══════════════════════════════════════════════════════════════════════
+async function loadCache() {
+  const d = await api('/discover/cache');
+  if (d.cached && d.series && d.series.length > 0) {
+    _allSeries  = d.series;
+    _fromCache  = true;
+
+    const info  = d.cache_info || {};
+    const ageH  = info.age_seconds ? Math.round(info.age_seconds / 3600) : '?';
+    const banner = document.getElementById('cache-banner');
+    banner.classList.remove('hidden');
+    document.getElementById('cache-banner-text').textContent =
+      `Résultats du cache (il y a ${ageH}h) — ${d.series.length} série(s) trouvée(s)`;
+
+    renderSeriesList();
+    document.getElementById('panel-subtitle').textContent =
+      `${d.series.length} série(s) — cache ${ageH}h`;
+  }
+}
+
+async function clearCache() {
+  await api('/discover/cache', 'DELETE');
+  _allSeries  = [];
+  _fromCache  = false;
+  _activeIdx  = -1;
+  document.getElementById('cache-banner').classList.add('hidden');
+  document.getElementById('series-list').innerHTML = `
+    <div class="empty-panel">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
+      <p>Cache vidé. Lance un nouveau scan.</p>
+    </div>`;
+  document.getElementById('releases-content').innerHTML = `
+    <div class="empty-panel" style="height:60vh">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+      <p>Sélectionne une série dans la liste pour voir ses releases.</p>
+    </div>`;
+  document.getElementById('dl-bar').classList.remove('visible');
+  document.getElementById('panel-subtitle').textContent = 'Séries incomplètes avec releases disponibles';
+}
+
+// ══════════════════════════════════════════════════════════════════════
+// SCAN SSE
+// ══════════════════════════════════════════════════════════════════════
+function startScan() {
+  if (_scanSSE) { _scanSSE.close(); _scanSSE = null; }
+
+  const lib_id   = document.getElementById('lib-select').value;
+  const delay_ms = parseInt(document.getElementById('delay-input').value) || 5000;
+
+  // Reset UI
+  _allSeries  = [];
+  _activeIdx  = -1;
+  _tomeOverrides = {};
+  _fromCache  = false;
+
+  document.getElementById('cache-banner').classList.add('hidden');
+  document.getElementById('btn-scan').disabled = true;
+  document.getElementById('btn-stop').style.display = '';
+  document.getElementById('series-list').innerHTML = `
+    <div class="empty-panel">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" stroke-dasharray="4 2"/></svg>
+      <p id="scan-hint">Chargement des séries incomplètes…</p>
+    </div>`;
+  document.getElementById('releases-content').innerHTML = '';
+  document.getElementById('dl-bar').classList.remove('visible');
+
+  const progress  = document.getElementById('scan-progress');
+  const fill      = document.getElementById('progress-fill');
+  const label     = document.getElementById('progress-label');
+  const seriesLbl = document.getElementById('progress-series');
+
+  progress.classList.add('visible');
+  fill.style.width = '2%';
+  label.textContent = 'Connexion au flux SSE…';
+
+  const params = new URLSearchParams({ delay_ms });
+  if (lib_id) params.set('lib_id', lib_id);
+
+  _scanSSE = new EventSource(`/api/discover/stream?${params}`);
+
+  _scanSSE.onmessage = (e) => {
+    let ev;
+    try { ev = JSON.parse(e.data); } catch { return; }
+
+    if (ev.type === 'start') {
+      const total = ev.total;
+      label.textContent = `0 / ${total} séries scannées`;
+      if (total === 0) {
+        label.textContent = 'Aucune série incomplète avec metadata tomes_vf.';
+        finishScan();
+      } else {
+        document.getElementById('series-list').innerHTML = `
+          <div class="empty-panel">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
+            <p>${total} séries à scanner — les résultats apparaissent au fur et à mesure…</p>
+          </div>`;
+      }
+    }
+    else if (ev.type === 'progress') {
+      const pct = Math.round((ev.current / ev.total) * 100);
+      fill.style.width  = pct + '%';
+      label.textContent = `${ev.current} / ${ev.total} scannées`;
+      seriesLbl.textContent = ev.series_name || '';
+    }
+    else if (ev.type === 'series') {
+      _allSeries.push(ev.series);
+      renderSeriesList();
+      // Sélectionne automatiquement si c'est la première
+      if (_allSeries.length === 1) selectSeries(0);
+    }
+    else if (ev.type === 'done') {
+      fill.style.width  = '100%';
+      label.textContent = `Terminé — ${ev.total_found} série(s) avec releases`;
+      seriesLbl.textContent = '';
+      document.getElementById('panel-subtitle').textContent =
+        `${ev.total_found} série(s) trouvées / ${ev.total_scanned} scannées`;
+      finishScan();
+    }
+    else if (ev.type === 'error') {
+      label.textContent = ev.message || 'Erreur';
+      label.style.color = 'var(--danger)';
+      finishScan();
+    }
+  };
+
+  _scanSSE.onerror = () => {
+    label.textContent = 'Connexion interrompue';
+    label.style.color = 'var(--danger)';
+    finishScan();
+  };
+}
+
+function stopScan() {
+  if (_scanSSE) { _scanSSE.close(); _scanSSE = null; }
+  finishScan();
+}
+
+function finishScan() {
+  if (_scanSSE) { _scanSSE.close(); _scanSSE = null; }
+  document.getElementById('btn-scan').disabled = false;
+  document.getElementById('btn-stop').style.display = 'none';
+  setTimeout(() => {
+    document.getElementById('scan-progress').classList.remove('visible');
+    document.getElementById('progress-label').style.color = '';
+  }, 3000);
+
+  if (!_allSeries.length) {
+    document.getElementById('series-list').innerHTML = `
+      <div class="empty-panel">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M9.172 16.172a4 4 0 015.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+        <p>Aucune série incomplète avec des releases disponibles.</p>
+      </div>`;
+  }
+}
+
+// ══════════════════════════════════════════════════════════════════════
+// RENDU LISTE SÉRIES
+// ══════════════════════════════════════════════════════════════════════
+function renderSeriesList() {
+  const panel = document.getElementById('series-list');
+  if (!_allSeries.length) return;
+
+  panel.innerHTML = _allSeries.map((s, idx) => {
+    const isActive = idx === _activeIdx;
+    const badgeCls = s.has_integrale ? ' integrale' : '';
+    return `<div class="series-list-item${isActive ? ' active' : ''}" onclick="selectSeries(${idx})">
+      <div style="min-width:0;flex:1">
+        <div class="series-item-name">${esc(s.series_name)}</div>
+        <div class="series-item-sub">${s.missing_count > 0 ? `${s.missing_count} manquant(s)` : `${s.owned_count}/${s.total_vf||'?'} tomes`} · ${esc(s.lib_name)}</div>
+      </div>
+      <span class="series-rel-badge${badgeCls}">${s.releases_count}</span>
+    </div>`;
+  }).join('');
+}
+
+// ══════════════════════════════════════════════════════════════════════
+// SÉLECTION + AFFICHAGE RELEASES
+// ══════════════════════════════════════════════════════════════════════
+function selectSeries(idx) {
+  _activeIdx = idx;
+  _tomeOverrides = {};
+  renderSeriesList();
+  renderReleases();
+}
+
+function renderReleases() {
+  const s = _allSeries[_activeIdx];
+  if (!s) return;
+
+  const panel    = document.getElementById('releases-content');
+  const missingSet = new Set(s.missing_tomes || []);
+  const ownedSet   = new Set(s.tomes_owned   || []);
+
+  const ownedLabel = s.total_vf > 0
+    ? `${s.owned_count} / ${s.total_vf} tomes · ${s.missing_count} manquant(s)`
+    : `${s.owned_count} tome(s) en librairie`;
+
+  let html = `
+    <div class="releases-header">
+      <div class="releases-title">
+        ${esc(s.series_name)}
+        <a href="/series/${esc(s.series_slug)}" target="_blank">↗ Voir</a>
+      </div>
+    </div>
+    <div class="owned-bar">
+      <span>${ownedLabel}</span>
+      ${s.missing_tomes?.length ? `<span style="color:var(--warning)">Manquants : T${s.missing_tomes.map(n=>String(n).padStart(2,'0')).join(', T')}</span>` : ''}
+    </div>`;
+
+  html += (s.releases || []).map((r, ridx) => {
+    const vt     = r.vol_type || 'unknown';
+    const key    = `${_activeIdx}_${ridx}`;
+    const tomes  = _tomeOverrides[key] || r.tomes || [];
+    const sizeMB = r.size > 0 ? (r.size / 1048576).toFixed(0) + ' MB' : '';
+    const covered = r.covered_missing || [];
+
+    let tomesHtml = '';
+    if (vt === 'integrale') {
+      tomesHtml = `<div style="font-size:11px;color:var(--warning);margin-top:7px">★ Intégrale — ${missingSet.size > 0 ? `couvre ${missingSet.size} tome(s) manquant(s)` : 'collection complète'}</div>`;
+    } else if (tomes.length) {
+      const chips = tomes.slice(0, 25).map(n => {
+        const cls = missingSet.has(n) ? 'missing' : ownedSet.has(n) ? 'owned' : 'unknown';
+        return `<span class="tome-chip ${cls}">T${String(n).padStart(2,'0')}</span>`;
+      }).join('') + (tomes.length > 25 ? `<span style="font-size:10px;color:var(--text-dim)"> +${tomes.length - 25}</span>` : '');
+      tomesHtml = `<div class="tome-chips">${chips}</div>`;
+    }
+
+    const typeLabel = vt === 'integrale' ? 'Intégrale' : vt === 'pack' ? 'Pack' : vt === 'single' ? 'Tome' : vt;
+
+    return `<div class="release-card ${vt}" id="rcard-${ridx}">
+      <div class="release-card-row">
+        <input type="checkbox" class="release-cb" id="rcb-${_activeIdx}-${ridx}" onchange="updateDlBar()">
+        <div class="release-card-info">
+          <div class="release-card-title">
+            <span class="type-badge ${vt}">${typeLabel}</span>
+            ${esc(r.title)}
+            ${r.release_url ? `<a href="${esc(r.release_url)}" target="_blank" title="Voir la release" style="color:var(--text-dim);text-decoration:none;font-size:14px">🔗</a>` : ''}
+          </div>
+          <div class="release-meta">
+            ${sizeMB ? `<span>${sizeMB}</span>` : ''}
+            ${r.seeders ? `<span style="color:var(--success)">▲${r.seeders} seeds</span>` : ''}
+            ${r.peers   ? `<span>↓${r.peers} peers</span>` : ''}
+            ${r.indexer ? `<span>via ${esc(r.indexer)}</span>` : ''}
+            ${covered.length > 0 ? `<span style="color:var(--warning)">⚑ ${covered.length} manquant(s) couvert(s)</span>` : ''}
+            <a href="#" onclick="event.preventDefault();editTomes(${_activeIdx},${ridx})"
+               style="font-size:11px">✎ Modifier tomes</a>
+          </div>
+          ${tomesHtml}
+        </div>
+      </div>
+    </div>`;
+  }).join('');
+
+  panel.innerHTML = html;
+  updateDlBar();
+}
+
+// ══════════════════════════════════════════════════════════════════════
+// ÉDITION TOMES
+// ══════════════════════════════════════════════════════════════════════
+function editTomes(seriesIdx, releaseIdx) {
+  const r = _allSeries[seriesIdx]?.releases?.[releaseIdx];
+  if (!r) return;
+  const key     = `${seriesIdx}_${releaseIdx}`;
+  const current = (_tomeOverrides[key] || r.tomes || []).join(', ');
+  const input   = prompt(`Release : ${r.title}\n\nTomes (virgules ou plage : 1-30, 1à30) :`, current);
+  if (input === null) return;
+  _tomeOverrides[key] = parseTomeInput(input);
+  if (_activeIdx === seriesIdx) renderReleases();
+}
+
+function parseTomeInput(input) {
+  const tomes = [];
+  for (const part of input.split(',')) {
+    const t     = part.trim();
+    const range = t.match(/^(\d+)\s*[-àa]\s*(\d+)$/i);
+    if (range) {
+      const s = parseInt(range[1]), e = parseInt(range[2]);
+      if (e >= s && (e - s) <= 500) for (let i = s; i <= e; i++) tomes.push(i);
+    } else {
+      const n = parseInt(t);
+      if (!isNaN(n) && n > 0) tomes.push(n);
+    }
+  }
+  return [...new Set(tomes)].sort((a, b) => a - b);
+}
+
+// ══════════════════════════════════════════════════════════════════════
+// BARRE DE TÉLÉCHARGEMENT
+// ══════════════════════════════════════════════════════════════════════
+function updateDlBar() {
+  const checked = document.querySelectorAll('[id^="rcb-"]:checked');
+  const bar = document.getElementById('dl-bar');
+  bar.classList.toggle('visible', checked.length > 0);
+  const cnt = document.getElementById('dl-count');
+  if (cnt) cnt.textContent = `${checked.length} release(s) sélectionnée(s)`;
+}
+
+async function sendSelected() {
+  const s = _allSeries[_activeIdx];
+  if (!s) return;
+  const checked = [...document.querySelectorAll('[id^="rcb-"]:checked')];
+  if (!checked.length) return;
+
+  const releases = checked.map(cb => {
+    const parts = cb.id.split('-');
+    const ridx  = parseInt(parts[parts.length - 1]);
+    const r     = s.releases[ridx];
+    const key   = `${_activeIdx}_${ridx}`;
+    return { ...r, assigned_tomes: _tomeOverrides[key] || r.tomes || [] };
+  });
+
+  const clientId = document.getElementById('dl-client-select').value;
+  const statusEl = document.getElementById('dl-status');
+  if (statusEl) { statusEl.textContent = 'Envoi…'; statusEl.style.color = 'var(--text-dim)'; }
+
+  const d = await api('/torrent/download', 'POST', {
+    client_id:   clientId,
+    series_slug: s.series_slug,
+    series_name: s.series_name,
+    releases,
+  });
+
+  if (statusEl) {
+    statusEl.textContent  = d.message || (d.ok ? 'Envoyé ✓' : 'Erreur');
+    statusEl.style.color  = d.ok ? 'var(--success)' : 'var(--danger)';
+    setTimeout(() => { statusEl.textContent = ''; }, 4000);
+  }
+}
+</script>
+</body>
+</html>

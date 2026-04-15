@@ -1,0 +1,956 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MangaArr — Série</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/static/css/app.css">
+<link rel="stylesheet" href="/static/css/series.css">
+</head>
+<body>
+
+<aside id="sidebar">
+  <div class="sidebar-logo">
+    <svg viewBox="0 0 36 36" fill="none"><rect width="36" height="36" rx="8" fill="#00b5cc"/><text x="18" y="25" text-anchor="middle" font-size="18" font-weight="700" fill="white" font-family="Inter">M</text></svg>
+    <span>MangaArr</span>
+  </div>
+  <nav class="sidebar-nav">
+    <div class="nav-section-label">Collection</div>
+    <a class="nav-item active" href="/">
+      <svg viewBox="0 0 20 20" fill="currentColor"><path d="M2 6a2 2 0 012-2h5l2 2h5a2 2 0 012 2v6a2 2 0 01-2 2H4a2 2 0 01-2-2V6z"/></svg>Komga
+    </a>
+  </nav>
+</aside>
+
+<main id="main-content">
+
+  <div class="breadcrumb">
+    <a href="/" class="breadcrumb-link">
+      <svg viewBox="0 0 20 20" fill="currentColor"><path d="M2 6a2 2 0 012-2h5l2 2h5a2 2 0 012 2v6a2 2 0 01-2 2H4a2 2 0 01-2-2V6z"/></svg>
+      Collection
+    </a>
+    <span class="breadcrumb-sep">›</span>
+    <span id="breadcrumb-name" class="breadcrumb-current">Chargement…</span>
+  </div>
+
+  <!-- Hero -->
+  <div id="series-hero" class="series-hero">
+    <div class="hero-bg" id="hero-bg"></div>
+    <div class="hero-content">
+      <div class="hero-cover-wrap">
+        <img id="hero-cover" class="hero-cover" src="" alt="Couverture">
+      </div>
+      <div class="hero-info">
+        <div class="hero-genres" id="hero-genres"></div>
+        <h1 id="hero-title" class="hero-title">—</h1>
+        <div class="hero-meta-row">
+          <span class="hero-badge" id="hero-status"></span>
+          <span class="hero-author" id="hero-author"></span>
+          <span class="hero-editeur" id="hero-editeur"></span>
+        </div>
+        <div class="hero-count-bar">
+          <span id="hero-count-label" class="hero-count-label"></span>
+          <div class="hero-progress-wrap" id="hero-progress-wrap" style="display:none">
+            <div class="hero-progress-bar">
+              <div class="hero-progress-fill" id="hero-progress-fill"></div>
+            </div>
+            <span id="hero-pct-label" class="hero-pct-label"></span>
+          </div>
+        </div>
+        <div class="hero-links" id="hero-links"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Résumé série -->
+  <div class="series-section" id="section-summary" style="display:none">
+    <h2 class="section-title">Résumé</h2>
+    <p id="series-summary" class="series-summary-text"></p>
+  </div>
+
+  <!-- Résumé Tome 1 -->
+  <div class="series-section" id="section-t01" style="display:none">
+    <h2 class="section-title">Résumé du Tome 1</h2>
+    <p id="series-t01-summary" class="series-summary-text"></p>
+  </div>
+
+  <!-- Volumes -->
+  <div class="series-section">
+    <div class="section-header-row">
+      <h2 class="section-title">Volumes</h2>
+      <span id="volumes-counter" class="volumes-counter"></span>
+    </div>
+    <div id="books-grid" class="books-grid">
+      <!-- Skeleton loading -->
+      <div class="book-card skeleton-card" style="opacity:.4"></div>
+      <div class="book-card skeleton-card" style="opacity:.3"></div>
+      <div class="book-card skeleton-card" style="opacity:.2"></div>
+    </div>
+  </div>
+
+</main>
+
+<script>
+const SERIES_SLUG = window.location.pathname.split('/series/')[1] || '';
+
+async function apiFetch(path) {
+  try {
+    const r = await fetch('/api' + path);
+    return r.json();
+  } catch(e) { return {ok: false}; }
+}
+
+function esc(s) {
+  if (!s && s !== 0) return '';
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function padNum(n) {
+  if (!n && n !== 0) return '??';
+  const num = parseInt(n);
+  return isNaN(num) ? String(n) : String(num).padStart(2, '0');
+}
+
+async function loadSeries() {
+  const data = await apiFetch(`/collection/series/${SERIES_SLUG}`);
+
+  if (!data.ok) {
+    document.getElementById('hero-title').textContent = 'Série introuvable';
+    document.getElementById('breadcrumb-name').textContent = 'Introuvable';
+    document.getElementById('books-grid').innerHTML = '<p style="color:var(--text-dim)">Impossible de charger cette série.</p>';
+    return;
+  }
+
+  const name  = data.name || '';
+  const meta  = data.mangadb || {};
+  const books = data.books || [];
+  const mangadbTomes = data.mangadbTomes || [];
+
+  // Titre + breadcrumb
+  document.title = `MangaArr — ${name}`;
+  document.getElementById('breadcrumb-name').textContent = name;
+  document.getElementById('hero-title').textContent = name;
+
+  // Cover hero
+  const coverImg = document.getElementById('hero-cover');
+  coverImg.src = data.thumbnail;
+  coverImg.onerror = () => { coverImg.style.opacity = '0'; };
+  document.getElementById('hero-bg').style.backgroundImage = `url(${data.thumbnail})`;
+
+  // Genres
+  const genres = meta.genres || [];
+  if (genres.length) {
+    document.getElementById('hero-genres').innerHTML = genres
+      .slice(0, 6).map(g => `<span class="genre-tag">${esc(g)}</span>`).join('');
+  }
+
+  // Statut
+  const statut = meta.statut_vf || data.komgaMeta?.status || '';
+  const statusEl = document.getElementById('hero-status');
+  if (statut) {
+    let label = statut;
+    let cls = 'badge-ongoing';
+    if (statut === 'Terminé' || statut === 'ENDED') { label = 'Terminé'; cls = 'badge-ended'; }
+    else if (statut === 'En cours' || statut === 'ONGOING') { label = 'En cours'; cls = 'badge-ongoing'; }
+    statusEl.textContent = label;
+    statusEl.classList.add(cls);
+  }
+
+  // Auteur / Éditeur
+  if (meta.auteur) document.getElementById('hero-author').textContent = `par ${meta.auteur}`;
+  if (meta.editeur) document.getElementById('hero-editeur').textContent = `• ${meta.editeur}`;
+
+  // Jauge VF
+  const booksCount = data.booksCount || 0;
+  const totalVF    = meta.tomes_vf || 0;
+  const countLabel = document.getElementById('hero-count-label');
+
+  if (totalVF > 0) {
+    const pct = Math.min(100, Math.round((booksCount / totalVF) * 100));
+    countLabel.textContent = `${booksCount} / ${totalVF} volumes VF`;
+    document.getElementById('hero-progress-wrap').style.display = 'flex';
+    document.getElementById('hero-progress-fill').style.width = pct + '%';
+    document.getElementById('hero-pct-label').textContent = pct + '%';
+  } else {
+    countLabel.textContent = `${booksCount} volume(s) possédé(s)`;
+  }
+
+  // Liens hero : Manga-News + chemin disque + bouton association MangaDB
+  const newsUrl  = meta.manga_news_url || null;
+  const diskPath = data.diskPath || null;
+  const isManual = meta._manual || false;
+
+  let linksHtml = '';
+  if (newsUrl) {
+    linksHtml += `<a href="${esc(newsUrl)}" target="_blank" rel="noopener" class="hero-ext-link">
+      <svg viewBox="0 0 20 20" fill="currentColor"><path d="M11 3a1 1 0 100 2h2.586l-6.293 6.293a1 1 0 101.414 1.414L15 6.414V9a1 1 0 102 0V4a1 1 0 00-1-1h-5z"/><path d="M5 5a2 2 0 00-2 2v8a2 2 0 002 2h8a2 2 0 002-2v-3a1 1 0 10-2 0v3H5V7h3a1 1 0 000-2H5z"/></svg>
+      Manga-News
+    </a>`;
+  }
+  if (diskPath) {
+    linksHtml += `<span class="hero-disk-path" title="${esc(diskPath)}">
+      <svg viewBox="0 0 20 20" fill="currentColor" style="width:13px;height:13px;flex-shrink:0"><path d="M2 6a2 2 0 012-2h5l2 2h5a2 2 0 012 2v6a2 2 0 01-2 2H4a2 2 0 01-2-2V6z"/></svg>
+      ${esc(diskPath)}
+    </span>`;
+  }
+  // Bouton engrenage association MangaDB
+  const mangadbLabel = meta.titre
+    ? `${esc(meta.titre)}${isManual ? ' 🔗' : ''}`
+    : 'Non associé';
+  linksHtml += `<button class="hero-mangadb-btn" onclick="openMangadbModal()" title="Associer manuellement à MangaDB">
+    <svg viewBox="0 0 20 20" fill="currentColor" style="width:14px;height:14px"><path fill-rule="evenodd" d="M11.49 3.17c-.38-1.56-2.6-1.56-2.98 0a1.532 1.532 0 01-2.286.948c-1.372-.836-2.942.734-2.106 2.106.54.886.061 2.042-.947 2.287-1.561.379-1.561 2.6 0 2.978a1.532 1.532 0 01.947 2.287c-.836 1.372.734 2.942 2.106 2.106a1.532 1.532 0 012.287.947c.379 1.561 2.6 1.561 2.978 0a1.533 1.533 0 012.287-.947c1.372.836 2.942-.734 2.106-2.106a1.533 1.533 0 01.947-2.287c1.561-.379 1.561-2.6 0-2.978a1.532 1.532 0 01-.947-2.287c.836-1.372-.734-2.942-2.106-2.106a1.532 1.532 0 01-2.287-.947zM10 13a3 3 0 100-6 3 3 0 000 6z" clip-rule="evenodd"/></svg>
+    MangaDB : ${mangadbLabel}
+  </button>`;
+
+  // Bouton historique tomes
+  linksHtml += `<button class="hero-mangadb-btn" onclick="openTomeHistory()" title="Historique des tomes (ajouts, upgrades, renommages)">
+    <svg viewBox="0 0 20 20" fill="currentColor" style="width:14px;height:14px"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z" clip-rule="evenodd"/></svg>
+    Historique
+  </button>`;
+
+  // Bouton réparation CBZ
+  linksHtml += `<button class="hero-mangadb-btn" id="btn-repair-cbz" onclick="scanAndRepairCbz()" title="Vérifier et réparer les faux CBZ (RAR renommés)">
+    <svg viewBox="0 0 20 20" fill="currentColor" style="width:14px;height:14px"><path fill-rule="evenodd" d="M11.49 3.17c-.38-1.56-2.6-1.56-2.98 0a1.532 1.532 0 01-2.286.948c-1.372-.836-2.942.734-2.106 2.106.54.886.061 2.042-.947 2.287-1.561.379-1.561 2.6 0 2.978a1.532 1.532 0 01.947 2.287c-.836 1.372.734 2.942 2.106 2.106a1.532 1.532 0 012.287.947c.379 1.561 2.6 1.561 2.978 0a1.533 1.533 0 012.287-.947c1.372.836 2.942-.734 2.106-2.106a1.533 1.533 0 01.947-2.287c1.561-.379 1.561-2.6 0-2.978a1.532 1.532 0 01-.947-2.287c.836-1.372-.734-2.942-2.106-2.106a1.532 1.532 0 01-2.287-.947zM10 13a3 3 0 100-6 3 3 0 000 6z" clip-rule="evenodd"/></svg>
+    Réparer CBZ
+  </button>`;
+
+  // Bouton recherche tomes ebdz
+  linksHtml += `<button class="hero-mangadb-btn" onclick="openTomeSearch()" title="Rechercher des tomes sur ebdz">
+    <svg viewBox="0 0 20 20" fill="currentColor" style="width:14px;height:14px"><path fill-rule="evenodd" d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z" clip-rule="evenodd"/></svg>
+    Tomes ebdz
+  </button>`;
+
+  // Bouton recherche Torrent
+  linksHtml += `<button class="hero-mangadb-btn" id="btn-torrent-search" onclick="openTorrentSearch()" title="Rechercher des torrents (Torznab)">
+    <svg viewBox="0 0 20 20" fill="currentColor" style="width:14px;height:14px"><path d="M10.894 2.553a1 1 0 00-1.788 0l-7 14a1 1 0 001.169 1.409l5-1.429A1 1 0 009 15.571V11a1 1 0 112 0v4.571a1 1 0 00.725.962l5 1.428a1 1 0 001.17-1.408l-7-14z"/></svg>
+    Torrent
+  </button>`;
+
+  document.getElementById('hero-links').innerHTML = linksHtml;
+
+  // Résumé série (depuis MangaDB detail si disponible)
+  const summaryEl  = document.getElementById('series-summary');
+  const t01El      = document.getElementById('series-t01-summary');
+  const t01Summary = meta.resume_t01 || '';
+
+  // Résumé T01 depuis tomes MangaDB
+  if (t01Summary) {
+    document.getElementById('section-t01').style.display = '';
+    t01El.textContent = t01Summary;
+  } else if (mangadbTomes.length > 0 && mangadbTomes[0].resume) {
+    document.getElementById('section-t01').style.display = '';
+    t01El.textContent = mangadbTomes[0].resume;
+  }
+
+  // Construction de la grille des volumes
+  renderVolumes(books, mangadbTomes, totalVF);
+}
+
+function renderVolumes(ownedBooks, mangadbTomes, totalVF) {
+  const grid = document.getElementById('books-grid');
+  const counter = document.getElementById('volumes-counter');
+
+  // Map des livres possédés par numéro
+  const ownedByNum = {};
+  for (const b of ownedBooks) {
+    const num = parseInt(b.number) || null;
+    if (num !== null) ownedByNum[num] = b;
+  }
+
+  // Détermine le nombre total de tomes à afficher
+  const maxFromMeta  = totalVF || 0;
+  const maxFromOwned = ownedBooks.length > 0
+    ? Math.max(...ownedBooks.map(b => parseInt(b.number) || 0))
+    : 0;
+  const maxFromDb    = mangadbTomes.length > 0
+    ? Math.max(...mangadbTomes.map(t => parseInt(t.numero) || 0))
+    : 0;
+  const totalToShow  = Math.max(maxFromMeta, maxFromOwned, maxFromDb, ownedBooks.length);
+
+  // Map des covers MangaDB par numéro
+  const dbByNum = {};
+  for (const t of mangadbTomes) {
+    const num = parseInt(t.numero);
+    if (!isNaN(num)) dbByNum[num] = t;
+  }
+
+  let cards = '';
+  let missingCount = 0;
+
+  if (totalToShow > 0) {
+    for (let i = 1; i <= totalToShow; i++) {
+      const owned = ownedByNum[i];
+      const dbTome = dbByNum[i];
+
+      if (owned) {
+        // Tome possédé
+        cards += `
+          <div class="book-card">
+            <div class="book-cover-wrap" style="position:relative">
+              <img class="book-cover" src="${esc(owned.thumbnail)}" alt="T${padNum(i)}"
+                   loading="lazy"
+                   onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
+              <div class="book-cover-placeholder" style="display:none">T${padNum(i)}</div>
+              <span class="book-num">T${padNum(i)}</span>
+              <button class="book-edit-btn" title="Modifier ce tome"
+                      onclick="openTomeEdit('${esc(owned.name)}', ${i})">⚙</button>
+            </div>
+            <div class="book-name">${esc(owned.name || `Tome ${i}`)}</div>
+          </div>`;
+      } else {
+        // Tome manquant
+        missingCount++;
+        const dbCover = dbTome?.cover || null;
+        cards += `
+          <div class="book-card book-card-missing">
+            <div class="book-cover-wrap missing-wrap">
+              ${dbCover
+                ? `<img class="book-cover" src="${esc(dbCover)}" alt="T${padNum(i)}" loading="lazy" onerror="this.style.display='none'">`
+                : `<div class="book-cover-placeholder">T${padNum(i)}</div>`}
+              <span class="book-num">T${padNum(i)}</span>
+              <div class="missing-banner">Manquant</div>
+            </div>
+            <div class="book-name" style="color:var(--danger)">Tome ${i}</div>
+          </div>`;
+      }
+    }
+  } else {
+    // Pas de total connu, affiche juste les possédés
+    for (const b of ownedBooks) {
+      const num = parseInt(b.number) || '?';
+      cards += `
+        <div class="book-card">
+          <div class="book-cover-wrap">
+            <img class="book-cover" src="${esc(b.thumbnail)}" alt="${esc(b.name)}"
+                 loading="lazy"
+                 onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
+            <div class="book-cover-placeholder" style="display:none">T${padNum(num)}</div>
+            <span class="book-num">T${padNum(num)}</span>
+          </div>
+          <div class="book-name">${esc(b.name)}</div>
+        </div>`;
+    }
+  }
+
+  grid.innerHTML = cards || '<p style="color:var(--text-dim)">Aucun volume trouvé</p>';
+
+  // Compteur
+  const total = totalToShow || ownedBooks.length;
+  counter.textContent = `${ownedBooks.length} possédé(s) / ${total} total${missingCount > 0 ? ` · ${missingCount} manquant(s)` : ''}`;
+}
+
+loadSeries();
+
+// ── ASSOCIATION MANUELLE MANGADB ─────────────────────
+let _seriesSlugGlobal = SERIES_SLUG;
+
+function openMangadbModal() {
+  const modal = document.getElementById('modal-mangadb');
+  modal.style.display = 'flex';
+  // Pré-remplit avec le nom de la série
+  const title = document.getElementById('hero-title')?.textContent || '';
+  document.getElementById('mangadb-search-input').value = title;
+  document.getElementById('mangadb-results').innerHTML = '';
+  document.getElementById('mangadb-modal-status').textContent = '';
+  searchMangadb();
+}
+
+function closeMangadbModal() {
+  document.getElementById('modal-mangadb').style.display = 'none';
+}
+
+async function searchMangadb() {
+  const q       = document.getElementById('mangadb-search-input').value.trim();
+  const results = document.getElementById('mangadb-results');
+  const status  = document.getElementById('mangadb-modal-status');
+  if (!q) return;
+
+  results.innerHTML = '<span style="color:var(--text-dim);font-size:12px">Recherche…</span>';
+  status.textContent = '';
+
+  const d = await apiFetch(`/collection/series/${_seriesSlugGlobal}/mangadb-search?q=${encodeURIComponent(q)}`);
+  if (!d.ok || !d.results?.length) {
+    results.innerHTML = '<span style="color:var(--text-dim);font-size:12px">Aucun résultat.</span>';
+    return;
+  }
+
+  results.innerHTML = d.results.map(r => `
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 10px;
+                background:var(--bg-input);border-radius:6px;border:1px solid var(--border)">
+      <div>
+        <div style="font-size:13px;font-weight:500">${esc(r.titre)}</div>
+        <div style="font-size:11px;color:var(--text-dim)">${esc(r.auteur || '')} ${r.score ? '· Score : ' + Math.round(r.score*100)+'%' : ''}</div>
+      </div>
+      <button onclick="linkMangadb('${esc(r.titre)}')"
+              style="padding:5px 12px;background:var(--accent);border:none;border-radius:5px;color:#000;font-size:12px;font-weight:600;cursor:pointer;flex-shrink:0">
+        Associer
+      </button>
+    </div>`).join('');
+}
+
+async function linkMangadb(titre) {
+  const status = document.getElementById('mangadb-modal-status');
+  status.textContent = 'Association en cours…';
+  status.style.color = 'var(--text-dim)';
+
+  const d = await fetch(`/api/collection/series/${_seriesSlugGlobal}/mangadb-link`, {
+    method: 'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({mangadb_titre: titre})
+  }).then(r => r.json()).catch(() => ({ok: false, message: 'Erreur réseau'}));
+
+  if (d.ok) {
+    status.textContent = d.message || 'Associé ✓';
+    status.style.color = 'var(--success)';
+    setTimeout(() => {
+      closeMangadbModal();
+      loadSeries();  // Recharge la page pour afficher les nouvelles infos
+    }, 800);
+  } else {
+    status.textContent = d.message || 'Erreur';
+    status.style.color = 'var(--danger)';
+  }
+}
+
+async function unlinkMangadb() {
+  if (!confirm('Supprimer l\'association MangaDB ? Elle sera recalculée automatiquement au prochain chargement.')) return;
+  const d = await fetch(`/api/collection/series/${_seriesSlugGlobal}/mangadb-unlink`, {
+    method: 'POST'
+  }).then(r => r.json()).catch(() => ({ok: false}));
+  closeMangadbModal();
+  if (d.ok) loadSeries();
+}
+
+// Ferme le modal en cliquant sur le fond
+document.getElementById('modal-mangadb').addEventListener('click', e => {
+  if (e.target === e.currentTarget) closeMangadbModal();
+});
+
+</script>
+
+<!-- ── MODAL Association MangaDB ── -->
+<div id="modal-mangadb" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:1000;align-items:center;justify-content:center">
+  <div style="background:var(--bg-card);border-radius:12px;padding:24px;width:520px;max-width:95vw;max-height:85vh;overflow-y:auto;border:1px solid var(--border)">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+      <h2 style="margin:0;font-size:16px">Associer à MangaDB</h2>
+      <button onclick="closeMangadbModal()" style="background:none;border:none;color:var(--text-dim);font-size:20px;cursor:pointer;padding:4px">✕</button>
+    </div>
+    <p style="font-size:12px;color:var(--text-dim);margin:0 0 12px">Recherchez le titre exact dans MangaDB et sélectionnez le bon résultat.</p>
+    <div style="display:flex;gap:8px;margin-bottom:12px">
+      <input type="text" id="mangadb-search-input" placeholder="Nom de la série…"
+             style="flex:1;padding:8px 12px;background:var(--bg-input);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:13px"
+             onkeydown="if(event.key==='Enter') searchMangadb()">
+      <button onclick="searchMangadb()"
+              style="padding:8px 14px;background:var(--accent);border:none;border-radius:6px;color:#000;font-size:13px;font-weight:600;cursor:pointer">
+        Chercher
+      </button>
+    </div>
+    <div id="mangadb-results" style="display:flex;flex-direction:column;gap:6px;min-height:40px"></div>
+    <div id="mangadb-modal-status" style="margin-top:12px;font-size:12px;min-height:18px"></div>
+    <div style="display:flex;gap:8px;margin-top:16px;justify-content:flex-end">
+      <button onclick="unlinkMangadb()"
+              style="padding:7px 14px;background:var(--danger);border:none;border-radius:6px;color:#fff;font-size:12px;cursor:pointer">
+        Supprimer l'association
+      </button>
+      <button onclick="closeMangadbModal()"
+              style="padding:7px 14px;background:var(--bg-input);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:12px;cursor:pointer">
+        Fermer
+      </button>
+    </div>
+  </div>
+</div>
+
+
+<!-- ── MODAL Historique tomes ── -->
+<div id="modal-tome-history" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:1000;align-items:center;justify-content:center">
+  <div style="background:var(--bg-card);border-radius:12px;width:620px;max-width:95vw;max-height:85vh;display:flex;flex-direction:column;border:1px solid var(--border)">
+    <div style="padding:18px 24px 14px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center">
+      <h2 style="margin:0;font-size:15px">⏱ Historique des tomes</h2>
+      <button onclick="document.getElementById('modal-tome-history').style.display='none'"
+              style="background:none;border:none;color:var(--text-dim);font-size:20px;cursor:pointer">✕</button>
+    </div>
+    <div id="tome-history-list" style="flex:1;overflow-y:auto;padding:12px 24px"></div>
+  </div>
+</div>
+
+<!-- ── MODAL Recherche tomes ebdz ── -->
+<div id="modal-tome-search" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:1000;align-items:center;justify-content:center">
+  <div style="background:var(--bg-card);border-radius:12px;width:680px;max-width:95vw;max-height:90vh;display:flex;flex-direction:column;border:1px solid var(--border)">
+    <div style="padding:18px 24px 14px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center">
+      <h2 style="margin:0;font-size:15px">🔍 Recherche tomes sur ebdz</h2>
+      <button onclick="document.getElementById('modal-tome-search').style.display='none'"
+              style="background:none;border:none;color:var(--text-dim);font-size:20px;cursor:pointer">✕</button>
+    </div>
+    <div style="padding:12px 24px;border-bottom:1px solid var(--border);display:flex;gap:8px">
+      <input type="text" id="tome-search-input" class="text-input" style="flex:1"
+             placeholder="Nom de la série sur ebdz…"
+             onkeydown="if(event.key==='Enter') searchTomesOnEbdz()">
+      <button class="btn btn-primary" onclick="searchTomesOnEbdz()">Chercher</button>
+      <button class="btn btn-secondary" onclick="searchTomesOnEbdz(true)">Auto ↺</button>
+    </div>
+    <div id="tome-search-results" style="flex:1;overflow-y:auto;padding:8px 24px"></div>
+    <div style="padding:12px 24px;border-top:1px solid var(--border);display:flex;gap:8px;align-items:center">
+      <span id="tome-search-status" class="status-msg" style="flex:1"></span>
+      <button id="btn-add-selected" class="btn btn-primary" onclick="addSelectedTomes()" style="display:none">
+        Ajouter sélectionnés →
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- ── MODAL Recherche Torrent ── -->
+<div id="modal-torrent-search" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:1000;align-items:center;justify-content:center">
+  <div style="background:var(--bg-card);border-radius:12px;width:760px;max-width:96vw;max-height:90vh;display:flex;flex-direction:column;border:1px solid var(--border)">
+    <div style="padding:18px 24px 14px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center">
+      <h2 style="margin:0;font-size:15px">🔎 Recherche Torrent (Torznab)</h2>
+      <button onclick="document.getElementById('modal-torrent-search').style.display='none'"
+              style="background:none;border:none;color:var(--text-dim);font-size:20px;cursor:pointer">✕</button>
+    </div>
+    <div style="padding:12px 24px;border-bottom:1px solid var(--border);display:flex;gap:8px">
+      <input type="text" id="torrent-search-input" class="text-input" style="flex:1"
+             placeholder="Nom de la série…"
+             onkeydown="if(event.key==='Enter') searchTorrents()">
+      <button class="btn btn-primary" onclick="searchTorrents()">Chercher</button>
+    </div>
+    <div id="torrent-search-results" style="flex:1;overflow-y:auto;padding:12px 24px"></div>
+    <div style="padding:12px 24px;border-top:1px solid var(--border);display:flex;gap:8px;align-items:center">
+      <span id="torrent-search-status" class="status-msg" style="flex:1;font-size:12px"></span>
+      <button id="btn-dl-selected" class="btn btn-primary" onclick="downloadSelectedTorrents()" style="display:none">
+        <svg viewBox="0 0 20 20" fill="currentColor" style="width:14px;height:14px"><path d="M10.894 2.553a1 1 0 00-1.788 0l-7 14a1 1 0 001.169 1.409l5-1.429A1 1 0 009 15.571V11a1 1 0 112 0v4.571a1 1 0 00.725.962l5 1.428a1 1 0 001.17-1.408l-7-14z"/></svg>
+        Envoyer vers qBittorrent
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- ── MODAL Édition tome ── -->
+<div id="modal-tome-edit" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:1000;align-items:center;justify-content:center">
+  <div style="background:var(--bg-card);border-radius:12px;width:500px;max-width:95vw;border:1px solid var(--border);padding:24px">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+      <h2 style="margin:0;font-size:15px">⚙ Modifier le tome</h2>
+      <button onclick="document.getElementById('modal-tome-edit').style.display='none'"
+              style="background:none;border:none;color:var(--text-dim);font-size:20px;cursor:pointer">✕</button>
+    </div>
+    <div style="font-size:12px;color:var(--text-dim);margin-bottom:12px">
+      Fichier original : <span id="edit-original-name" style="font-family:monospace;color:var(--text)"></span>
+    </div>
+    <div class="form-row" style="margin-bottom:10px">
+      <label style="font-size:12px">Numéro de tome</label>
+      <input type="number" id="edit-tome-number" class="text-input" min="1" max="999" style="width:100px">
+    </div>
+    <div class="form-row" style="margin-bottom:16px">
+      <label style="font-size:12px">Tag / Groupe</label>
+      <input type="text" id="edit-tome-tag" class="text-input" placeholder="ex: Paprika+">
+    </div>
+    <div id="edit-preview" style="font-size:12px;color:var(--accent);font-family:monospace;margin-bottom:14px;min-height:18px"></div>
+    <div id="edit-tome-status" class="status-msg" style="margin-bottom:10px"></div>
+    <div style="display:flex;gap:8px;justify-content:flex-end">
+      <button onclick="document.getElementById('modal-tome-edit').style.display='none'" class="btn btn-secondary">Annuler</button>
+      <button onclick="confirmTomeRename()" class="btn btn-primary">Renommer</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ── Historique des tomes ──────────────────────────────────
+async function openTomeHistory() {
+  document.getElementById('modal-tome-history').style.display = 'flex';
+  const list = document.getElementById('tome-history-list');
+  list.innerHTML = '<span style="color:var(--text-dim);font-size:12px">Chargement…</span>';
+
+  const d = await apiFetch(`/collection/series/${SERIES_SLUG}/tome-history`);
+  const items = d.history || [];
+
+  if (!items.length) {
+    list.innerHTML = '<p style="color:var(--text-dim);font-size:13px">Aucun historique disponible pour cette série.</p>';
+    return;
+  }
+
+  list.innerHTML = items.map(item => {
+    const h = item.history || {};
+    const action = item.action === 'upgrade' ? '↑ Upgrade' : '+ Ajout';
+    const actionColor = item.action === 'upgrade' ? 'var(--warning)' : 'var(--success)';
+    return `<div style="padding:10px 0;border-bottom:1px solid var(--border)">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
+        <span style="font-weight:600;font-size:13px">T${String(item.tome_number||'?').replace(/^T/,'')} — ${esc(item.series_name||'')}</span>
+        <span style="font-size:11px;padding:2px 7px;border-radius:10px;background:${actionColor}22;color:${actionColor}">${action}</span>
+      </div>
+      ${h.source_file  ? `<div style="font-size:11px;color:var(--text-dim)">Source : <span style="font-family:monospace">${esc(h.source_file)}</span></div>` : ''}
+      ${h.dest_filename ? `<div style="font-size:11px;color:var(--text-dim)">Copié → <span style="font-family:monospace;color:var(--accent)">${esc(h.dest_filename)}</span></div>` : ''}
+      ${h.owned_replaced ? `<div style="font-size:11px;color:var(--danger)">Remplacé : ${esc(h.owned_replaced)}</div>` : ''}
+      ${h.processed_at ? `<div style="font-size:11px;color:var(--text-dim)">Le ${h.processed_at}</div>` : ''}
+    </div>`;
+  }).join('');
+}
+
+// ── Recherche tomes ebdz ──────────────────────────────────
+let _selectedTomes    = new Set();
+let _searchedTomesMap = {};  // filehash → tome object (évite data-tome avec apostrophes)
+
+async function openTomeSearch() {
+  _selectedTomes.clear();
+  document.getElementById('modal-tome-search').style.display = 'flex';
+  document.getElementById('tome-search-input').value = '';
+  document.getElementById('tome-search-results').innerHTML =
+    '<p style="color:var(--text-dim);font-size:12px;padding:8px 0">Cliquez sur "Auto ↺" pour chercher automatiquement, ou entrez un nom et cliquez "Chercher".</p>';
+  document.getElementById('tome-search-status').textContent = '';
+  document.getElementById('btn-add-selected').style.display = 'none';
+}
+
+async function searchTomesOnEbdz(auto = false) {
+  const status  = document.getElementById('tome-search-status');
+  const results = document.getElementById('tome-search-results');
+  _selectedTomes.clear();
+
+  const q = auto ? '' : (document.getElementById('tome-search-input').value.trim());
+  const url = `/collection/series/${SERIES_SLUG}/search-tomes${q ? `?q=${encodeURIComponent(q)}` : ''}`;
+
+  results.innerHTML = '<span style="color:var(--text-dim);font-size:12px">Recherche sur ebdz…</span>';
+  status.textContent = '';
+
+  const d = await apiFetch(url);
+  if (!d.ok) {
+    results.innerHTML = `<p style="color:var(--danger);font-size:12px">${esc(d.message)}</p>`;
+    return;
+  }
+
+  if (!d.tomes?.length) {
+    results.innerHTML = '<p style="color:var(--text-dim);font-size:12px">Aucun tome trouvé.</p>';
+    return;
+  }
+
+  status.textContent = `${d.tomes.length} tome(s) disponible(s) sur "${d.thread}"`;
+
+  _searchedTomesMap = {};
+  results.innerHTML = d.tomes.map(t => {
+    _searchedTomesMap[t.filehash] = t;  // stocke la référence sans passer par data-*
+    const owned   = t.owned   ? '✓ Possédé'  : '';
+    const inQueue = t.in_queue ? '⌛ En queue' : '';
+    const badge   = owned || inQueue;
+    const bgColor = t.owned ? 'var(--bg-input)' : 'var(--bg-card)';
+    return `<label style="display:flex;align-items:center;gap:10px;padding:8px 10px;
+                          border-radius:6px;border:1px solid var(--border);margin:4px 0;
+                          cursor:pointer;background:${bgColor}">
+      <input type="checkbox" value="${esc(t.filehash)}"
+             ${t.in_queue ? 'disabled' : ''}
+             onchange="_selectedTomes[this.checked ? 'add' : 'delete'](this.value);
+                       document.getElementById('btn-add-selected').style.display=_selectedTomes.size?'':'none'">
+      <div style="flex:1">
+        <div style="font-size:13px;font-weight:500">T${String(t.numero).padStart(2,'0')}
+          <span style="font-size:11px;color:var(--text-dim);font-weight:400">${esc(t.tag||'')}</span>
+          ${badge ? `<span style="font-size:10px;color:var(--accent);margin-left:4px">${badge}</span>` : ''}
+        </div>
+        <div style="font-size:11px;color:var(--text-dim);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:400px">${esc(t.filename)}</div>
+      </div>
+    </label>`;
+  }).join('');
+}
+
+async function addSelectedTomes() {
+  const status = document.getElementById('tome-search-status');
+  const checkboxes = document.querySelectorAll('#tome-search-results input[type=checkbox]:checked');
+  if (!checkboxes.length) return;
+
+  const tomes = [...checkboxes].map(cb => _searchedTomesMap[cb.value]).filter(Boolean);
+  status.textContent = 'Ajout en cours…';
+
+  const d = await fetch(`/api/collection/series/${SERIES_SLUG}/add-tomes`, {
+    method: 'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({tomes})
+  }).then(r => r.json()).catch(() => ({ok:false, message:'Erreur réseau'}));
+
+  status.textContent = d.message || (d.ok ? 'Ajouté ✓' : 'Erreur');
+  status.style.color = d.ok ? 'var(--success)' : 'var(--danger)';
+  if (d.ok) {
+    _selectedTomes.clear();
+    // Déclenche le téléchargement automatique du .emulecollection
+    if (d.file && d.download) {
+      const a = document.createElement('a');
+      a.href     = `/api/queue/collections/${encodeURIComponent(d.file)}`;
+      a.download = d.file;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+    }
+    setTimeout(() => searchTomesOnEbdz(), 1000);
+  }
+}
+
+// ── Édition tome ─────────────────────────────────────────
+let _editFilename = '';
+
+function openTomeEdit(filename, tomeNum) {
+  _editFilename = filename;
+  document.getElementById('edit-original-name').textContent = filename;
+  document.getElementById('edit-tome-number').value = tomeNum || '';
+  // Détecte le tag depuis le nom de fichier
+  const tagMatch = filename.match(/eBook-([^.]+)\.cbz$/i);
+  document.getElementById('edit-tome-tag').value = tagMatch ? tagMatch[1].replace(/\./g,' ') : '';
+  document.getElementById('edit-tome-status').textContent = '';
+  _updateEditPreview();
+  document.getElementById('modal-tome-edit').style.display = 'flex';
+}
+
+function _updateEditPreview() {
+  const num = parseInt(document.getElementById('edit-tome-number').value) || 0;
+  const tag = document.getElementById('edit-tome-tag').value.trim() || 'Notag';
+  const title = (document.getElementById('hero-title')?.textContent || 'Serie').replace(/\s+/g,'.');
+  const preview = `${title}.T${String(num).padStart(2,'0')}.FRENCH.CBZ.eBook-${tag.replace(/\s+/g,'.')}.cbz`;
+  document.getElementById('edit-preview').textContent = preview;
+}
+document.addEventListener('input', e => {
+  if (e.target.matches('#edit-tome-number,#edit-tome-tag')) _updateEditPreview();
+});
+
+async function confirmTomeRename() {
+  const status = document.getElementById('edit-tome-status');
+  const num    = document.getElementById('edit-tome-number').value.trim();
+  const tag    = document.getElementById('edit-tome-tag').value.trim();
+  if (!num) { status.textContent = 'Numéro requis'; status.style.color='var(--danger)'; return; }
+
+  status.textContent = 'Renommage…'; status.style.color = 'var(--text-dim)';
+
+  const d = await fetch(`/api/collection/series/${SERIES_SLUG}/rename-tome`, {
+    method: 'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({ filename: _editFilename, tome_number: num, tag })
+  }).then(r => r.json()).catch(() => ({ok:false}));
+
+  if (d.ok) {
+    status.textContent = d.message || 'Renommé ✓';
+    status.style.color = 'var(--success)';
+    setTimeout(() => {
+      document.getElementById('modal-tome-edit').style.display = 'none';
+      loadSeries(); // Recharge la page
+    }, 800);
+  } else {
+    status.textContent = d.message || 'Erreur';
+    status.style.color = 'var(--danger)';
+  }
+}
+
+// ── Recherche Torrent ─────────────────────────────────
+let _torrentReleases    = [];
+let _torrentOwnedTomes  = [];
+let _torrentAssignments = {};
+
+async function openTorrentSearch() {
+  _torrentReleases    = [];
+  _torrentAssignments = {};
+  document.getElementById('modal-torrent-search').style.display = 'flex';
+  document.getElementById('torrent-search-input').value = document.getElementById('hero-title')?.textContent || '';
+  document.getElementById('torrent-search-results').innerHTML =
+    '<p style="color:var(--text-dim);font-size:12px;padding:8px 0">Cliquez sur "Chercher" pour lancer la recherche sur vos indexers Torznab.</p>';
+  document.getElementById('torrent-search-status').textContent = '';
+  document.getElementById('btn-dl-selected').style.display = 'none';
+  if (window.location.hash === '#torrent') searchTorrents();
+}
+
+async function searchTorrents() {
+  const q      = (document.getElementById('torrent-search-input') || {}).value?.trim() || '';
+  const status = document.getElementById('torrent-search-status');
+  const res    = document.getElementById('torrent-search-results');
+  if (!q) return;
+  res.innerHTML = '<span style="color:var(--text-dim);font-size:12px">Recherche sur les indexers Torznab…</span>';
+  if (status) status.textContent = '';
+
+  const d = await apiFetch(`/collection/series/${SERIES_SLUG}/torrent-search?q=${encodeURIComponent(q)}`);
+  if (!d.ok) {
+    res.innerHTML = `<p style="color:var(--danger);font-size:12px">${esc(d.message||'Erreur')}</p>`;
+    return;
+  }
+  _torrentReleases   = d.releases || [];
+  _torrentOwnedTomes = d.owned_tomes || [];
+  _torrentAssignments = {};
+  if (!_torrentReleases.length) {
+    res.innerHTML = '<p style="color:var(--text-dim);font-size:12px">Aucune release trouvée.</p>';
+    return;
+  }
+  if (status) status.textContent = `${_torrentReleases.length} release(s) trouvée(s)`;
+  renderTorrentResults();
+}
+
+function renderTorrentResults() {
+  const res = document.getElementById('torrent-search-results');
+  if (!res) return;
+  const typeLabel = { single:'Tome', pack:'Pack', integrale:'Intégrale', unknown:'?' };
+  res.innerHTML = _torrentReleases.map((r, idx) => {
+    const vtype  = r.vol_type || 'unknown';
+    const tomes  = _torrentAssignments[idx] !== undefined ? _torrentAssignments[idx] : (r.tomes || []);
+    const sizeMB = r.size > 0 ? (r.size / 1048576).toFixed(0) + ' MB' : '';
+    let tomeBadges = '';
+    if (vtype === 'single' && tomes.length) {
+      const n = tomes[0];
+      const owned = _torrentOwnedTomes.includes(n);
+      tomeBadges = `<div style="margin-top:4px">
+        <span style="padding:2px 6px;border-radius:4px;font-size:10px;background:${owned?'rgba(34,197,94,.15)':'rgba(251,191,36,.15)'};color:${owned?'var(--success)':'var(--warning)'};border:1px solid ${owned?'var(--success)':'var(--warning)'};cursor:pointer"
+              onclick="editTomeAssignment(${idx},${JSON.stringify(tomes)})">
+          T${String(n).padStart(2,'0')} ${owned?'✓ possédé':'? manquant'} · ✎ Corriger
+        </span></div>`;
+    } else if (vtype === 'pack' && tomes.length) {
+      const badges = tomes.slice(0,12).map(n => {
+        const owned = _torrentOwnedTomes.includes(n);
+        return `<span style="padding:1px 5px;border-radius:4px;font-size:10px;background:${owned?'rgba(34,197,94,.15)':'rgba(251,191,36,.15)'};color:${owned?'var(--success)':'var(--warning)'}">T${String(n).padStart(2,'0')}</span>`;
+      }).join('') + (tomes.length>12?`<span style="font-size:10px;color:var(--text-dim)"> +${tomes.length-12}</span>`:'');
+      tomeBadges = `<div style="display:flex;gap:3px;flex-wrap:wrap;margin-top:4px">${badges}</div>
+        <a href="#" onclick="event.preventDefault();editTomeAssignment(${idx},${JSON.stringify(tomes)})" style="font-size:10px;color:var(--accent);text-decoration:none">✎ Modifier les numéros</a>`;
+    } else if (vtype === 'integrale') {
+      tomeBadges = `<div style="font-size:11px;color:var(--warning);margin-top:4px">★ Intégrale — contient tous les tomes</div>`;
+    }
+    const missingCount = (r.missing_tomes || []).length;
+    const missingLabel = vtype==='integrale' ? '' : missingCount>0
+      ? `<span style="font-size:10px;color:var(--warning)">⚠ ${missingCount} manquant(s)</span>`
+      : vtype!=='unknown' ? `<span style="font-size:10px;color:var(--success)">✓ possédé(s)</span>` : '';
+    return `<div style="padding:10px 14px;background:var(--bg-input);border-radius:8px;border:1px solid ${vtype==='integrale'?'var(--warning)':vtype==='pack'?'var(--accent)':'var(--border)'};margin-bottom:6px">
+      <div style="display:flex;align-items:flex-start;gap:8px">
+        <input type="checkbox" id="tr-cb-${idx}" value="${idx}"
+               onchange="document.getElementById('btn-dl-selected').style.display=document.querySelectorAll('#torrent-search-results input:checked').length?'':'none'"
+               style="margin-top:3px;flex-shrink:0">
+        <div style="flex:1;min-width:0">
+          <div style="font-size:12px;font-weight:500;word-break:break-all;margin-bottom:3px">
+            <span style="display:inline-block;padding:1px 6px;border-radius:10px;font-size:10px;font-weight:700;background:rgba(0,181,204,.15);color:var(--accent);margin-right:5px">${typeLabel[vtype]||vtype}</span>
+            ${esc(r.title)}
+          </div>
+          <div style="font-size:11px;color:var(--text-dim);display:flex;gap:10px;flex-wrap:wrap;align-items:center">
+            ${sizeMB?`<span>${sizeMB}</span>`:''}
+            ${r.seeders?`<span style="color:var(--success)">▲${r.seeders} seeds</span>`:''}
+            ${r.peers?`<span>↓${r.peers} peers</span>`:''}
+            ${r.indexer?`<span>via ${esc(r.indexer)}</span>`:''}
+            ${missingLabel}
+            ${r.release_url
+              ? `<a href="${esc(r.release_url)}" target="_blank"
+                    style="color:var(--text-dim);text-decoration:none;font-size:14px" title="Voir la release">🔗</a>`
+              : ''}
+            ${r.link && !r.link.startsWith('magnet:')
+              ? `<a href="/api/torrent/fetch-file?url=${encodeURIComponent(r.link)}" target="_blank" download
+                    style="color:var(--accent);text-decoration:none;font-size:10px;padding:1px 6px;border:1px solid var(--accent);border-radius:4px;white-space:nowrap"
+                    title="Télécharger le fichier .torrent">↓ .torrent</a>`
+              : r.link && r.link.startsWith('magnet:')
+              ? `<a href="${r.link}" style="color:var(--text-dim);text-decoration:none;font-size:10px;padding:1px 6px;border:1px solid var(--border);border-radius:4px;white-space:nowrap" title="Ouvrir le lien magnet">⚡ magnet</a>`
+              : ''}
+          </div>
+          ${tomeBadges}
+        </div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function editTomeAssignment(idx, currentTomes) {
+  const release = _torrentReleases[idx];
+  if (!release) return;
+  const current = (_torrentAssignments[idx] || currentTomes).join(', ');
+  const input = prompt(
+    `Release : ${release.title}\n\nTomes (virgules ou plage, ex: 1-30) :`,
+    current
+  );
+  if (input === null) return;
+  const tomes = _parseTomeRange(input);
+  _torrentAssignments[idx] = tomes;
+  renderTorrentResults();
+}
+
+function _parseTomeRange(input) {
+  const tomes = [];
+  for (const part of input.split(',')) {
+    const t = part.trim();
+    const range = t.match(/^(\d+)\s*[-àa]\s*(\d+)$/i);
+    if (range) {
+      const s = parseInt(range[1]), e = parseInt(range[2]);
+      if (e >= s && (e - s) <= 500) for (let i = s; i <= e; i++) tomes.push(i);
+    } else {
+      const n = parseInt(t);
+      if (!isNaN(n) && n > 0) tomes.push(n);
+    }
+  }
+  return [...new Set(tomes)].sort((a,b) => a-b);
+}
+
+async function downloadSelectedTorrents() {
+  const checked = [...document.querySelectorAll('#torrent-search-results input[type=checkbox]:checked')];
+  if (!checked.length) return;
+  const status = document.getElementById('torrent-search-status');
+  if (status) { status.textContent = 'Envoi vers qBittorrent…'; status.style.color = 'var(--text-dim)'; }
+  const releases = checked.map(cb => {
+    const idx = parseInt(cb.value);
+    const r   = _torrentReleases[idx];
+    return { ...r, assigned_tomes: _torrentAssignments[idx] || r.tomes || [] };
+  });
+  const seriesName = document.getElementById('hero-title')?.textContent || '';
+  const d = await fetch('/api/torrent/download', {
+    method: 'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({ series_slug: SERIES_SLUG, series_name: seriesName, releases })
+  }).then(r => r.json()).catch(() => ({ok:false, message:'Erreur réseau'}));
+  if (status) {
+    status.textContent = d.message || (d.ok ? 'Envoyé ✓' : 'Erreur');
+    status.style.color = d.ok ? 'var(--success)' : 'var(--danger)';
+  }
+  if (d.ok) {
+    document.getElementById('btn-dl-selected').style.display = 'none';
+    checked.forEach(cb => { cb.checked = false; });
+    setTimeout(() => { if (status) status.textContent = ''; }, 3000);
+  }
+}
+
+// ── Réparation des faux CBZ ───────────────────────────
+async function scanAndRepairCbz() {
+  const btn = document.getElementById('btn-repair-cbz');
+  if (btn) { btn.disabled = true; btn.textContent = '🔍 Scan…'; }
+
+  const scan = await apiFetch(`/collection/series/${SERIES_SLUG}/scan-cbz`);
+
+  if (!scan.ok) {
+    alert('Erreur : ' + (scan.message || 'impossible de scanner'));
+    if (btn) { btn.disabled = false; btn.innerHTML = '⚙ Réparer CBZ'; }
+    return;
+  }
+
+  const fakes = (scan.files || []).filter(f => !f.valid);
+
+  if (!fakes.length) {
+    alert(`✓ Tous les ${scan.total} CBZ sont valides.`);
+    if (btn) { btn.disabled = false; }
+    return;
+  }
+
+  const names = fakes.map(f => f.filename).join('\n');
+  const ok = confirm(
+    `${fakes.length} faux CBZ détecté(s) (RAR renommés) :\n\n${names}\n\nLancer la réparation ?`
+  );
+
+  if (!ok) {
+    if (btn) { btn.disabled = false; }
+    return;
+  }
+
+  if (btn) btn.textContent = '🔧 Réparation…';
+
+  const result = await fetch(`/api/collection/series/${SERIES_SLUG}/repair-cbz`, {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({ filenames: fakes.map(f => f.filename) })
+  }).then(r => r.json()).catch(() => ({ok: false, message: 'Erreur réseau'}));
+
+  alert(result.message || (result.ok ? 'Réparation terminée ✓' : 'Erreur'));
+
+  if (btn) { btn.disabled = false; btn.innerHTML = '⚙ Réparer CBZ'; }
+  if (result.ok && result.repaired > 0) loadSeries(); // Recharge pour voir les covers
+}
+
+</script>
+<style>
+.book-edit-btn {
+  position:absolute; bottom:6px; right:6px;
+  background:rgba(0,0,0,.65); border:none; border-radius:4px;
+  color:#fff; font-size:13px; cursor:pointer;
+  padding:2px 6px; opacity:0; transition:opacity .15s;
+}
+.book-cover-wrap:hover .book-edit-btn { opacity:1; }
+.book-edit-btn:hover { background:var(--accent); color:#000; }
+</style>
+</body>
+</html>

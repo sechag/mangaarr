@@ -1,0 +1,56 @@
+# ──────────────────────────────────────────────
+#  MangaArr — docker-compose.yml
+#  Adapte les chemins hôte selon ton serveur/NAS
+# ──────────────────────────────────────────────
+services:
+  mangaarr:
+    # Image publiée sur GitHub Container Registry
+    # Pour épingler une version stable : ghcr.io/sechag/mangaarr:v1.0.0
+    image: ghcr.io/sechag/mangaarr:latest
+    # Pour builder localement depuis les sources, remplace la ligne image par :
+    # build: .
+    container_name: mangaarr
+    restart: unless-stopped
+    ports:
+      - "7474:7474"
+    volumes:
+      # ── Données persistantes (config, cache, collections)
+      - ./data/config:/data/config
+      - ./data/cache:/data/cache
+      - ./data/emulecollections:/data/emulecollections
+
+      # ── Dossier Incoming eMule/aMule (LECTURE SEULE recommandée)
+      - /chemin/vers/aMule/Incoming:/incoming:ro
+
+      # ── Dossier de destination des séries (LECTURE/ÉCRITURE)
+      - /chemin/vers/Mangas:/media:rw
+
+      # ── Dossier de la catégorie qBittorrent (LECTURE/ÉCRITURE)
+      # Remplace /mnt/user/Download/complete/Mangaarr par le chemin exact
+      # de ta catégorie qBittorrent (save path configuré dans qBittorrent).
+      - /mnt/user/Download/complete/Mangaarr:/qbt-category:rw
+
+      # ── Fichiers .torrent téléchargés par MangaArr avant envoi à qBittorrent
+      - /chemin/vers/torrent_files:/torrent_files:rw
+
+    environment:
+      - MANGAARR_PORT=7474
+      - MANGAARR_CONFIG=/data/config/config.json
+      - MANGAARR_INCOMING=/incoming
+      - MANGAARR_DEST=/media
+      - MANGAARR_CACHE=/data/cache
+      - MANGAARR_EMULE=/data/emulecollections
+      - MANGAARR_INCOMING_INTERVAL=60   # Scan Incoming toutes les 60s
+
+      # ── qBittorrent : dossier de surveillance des torrents terminés
+      # Doit correspondre au point de montage du volume /qbt-category ci-dessus
+      - MANGAARR_QBT_WATCH=/qbt-category
+
+      # ── qBittorrent : chemin côté qBittorrent (optionnel — utilisé pour créer la catégorie automatiquement)
+      # Si ta catégorie est déjà configurée dans qBittorrent, tu peux laisser vide.
+      - MANGAARR_QBT_SAVE_PATH=/mnt/user/Download/complete/Mangaarr
+
+      # ── Dossier de stockage des .torrent téléchargés
+      - MANGAARR_TORRENT_FILES=/torrent_files
+
+      - TZ=Europe/Paris

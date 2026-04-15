@@ -1,0 +1,785 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MangaArr</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/static/css/app.css">
+</head>
+<body>
+
+<aside id="sidebar">
+  <div class="sidebar-logo">
+    <svg viewBox="0 0 36 36" fill="none"><rect width="36" height="36" rx="8" fill="#00b5cc"/><text x="18" y="25" text-anchor="middle" font-size="18" font-weight="700" fill="white" font-family="Inter">M</text></svg>
+    <span>MangaArr</span>
+  </div>
+  <nav class="sidebar-nav">
+    <div class="nav-section-label">Collection</div>
+    <a class="nav-item active" data-page="collection-local" href="#">
+      <svg viewBox="0 0 20 20" fill="currentColor"><path d="M2 6a2 2 0 012-2h5l2 2h5a2 2 0 012 2v6a2 2 0 01-2 2H4a2 2 0 01-2-2V6z"/></svg>
+      Collection
+    </a>
+    <div class="nav-section-label">Activity</div>
+    <a class="nav-item" data-page="activity-queue" href="#">
+      <svg viewBox="0 0 20 20" fill="currentColor"><path d="M3 4a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm0 4a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm0 4a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm0 4a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1z"/></svg>
+      Queue <span id="queue-badge" class="nav-badge" style="display:none">0</span>
+    </a>
+    <a class="nav-item" data-page="activity-logs" href="#">
+      <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M3 3a1 1 0 000 2v8a2 2 0 002 2h2.586l-1.293 1.293a1 1 0 101.414 1.414L10 15.414l2.293 2.293a1 1 0 001.414-1.414L12.414 15H15a2 2 0 002-2V5a1 1 0 100-2H3zm11 4a1 1 0 10-2 0v4a1 1 0 102 0V7zm-3 1a1 1 0 10-2 0v3a1 1 0 102 0V8zM8 9a1 1 0 00-2 0v2a1 1 0 102 0V9z" clip-rule="evenodd"/></svg>
+      Logs
+    </a>
+    <a class="nav-item" href="/discover" style="color:var(--accent)">
+      <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z" clip-rule="evenodd"/></svg>
+      Découverte Torrent
+    </a>
+    <div class="nav-section-label">Indexers</div>
+    <a class="nav-item" data-page="indexers" href="#">
+      <svg viewBox="0 0 20 20" fill="currentColor"><path d="M9 9a2 2 0 114 0 2 2 0 01-4 0z"/><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-13a4 4 0 00-3.446 6.032l-2.261 2.26a1 1 0 101.414 1.415l2.261-2.261A4 4 0 1011 5z" clip-rule="evenodd"/></svg>
+      Indexers
+    </a>
+    <div class="nav-section-label">Settings</div>
+    <a class="nav-item" data-page="settings-download-client" href="#">
+      <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M3 17a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm3.293-7.707a1 1 0 011.414 0L9 10.586V3a1 1 0 112 0v7.586l1.293-1.293a1 1 0 111.414 1.414l-3 3a1 1 0 01-1.414 0l-3-3a1 1 0 010-1.414z" clip-rule="evenodd"/></svg>
+      Download Client
+    </a>
+    <a class="nav-item" data-page="settings-libraries" href="#">
+      <svg viewBox="0 0 20 20" fill="currentColor"><path d="M7 3a1 1 0 000 2h6a1 1 0 100-2H7zM4 7a1 1 0 011-1h10a1 1 0 110 2H5a1 1 0 01-1-1zM2 11a2 2 0 012-2h12a2 2 0 012 2v4a2 2 0 01-2 2H4a2 2 0 01-2-2v-4z"/></svg>
+      Librairies
+    </a>
+    <a class="nav-item" data-page="settings-media" href="#">
+      <svg viewBox="0 0 20 20" fill="currentColor"><path d="M4 3a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V5a2 2 0 00-2-2H4zm3 2h6v4H7V5zm8 8v2h1v-2h-1zm-2-2H7v4h6v-4zm2 0h1V9h-1v2zm1-4V5h-1v2h1zM5 5v2H4V5h1zm0 4H4v2h1V9zm-1 4h1v2H4v-2z"/></svg>
+      Media Management
+    </a>
+    <a class="nav-item" data-page="settings-profiles" href="#">
+      <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M11.49 3.17c-.38-1.56-2.6-1.56-2.98 0a1.532 1.532 0 01-2.286.948c-1.372-.836-2.942.734-2.106 2.106.54.886.061 2.042-.947 2.287-1.561.379-1.561 2.6 0 2.978a1.532 1.532 0 01.947 2.287c-.836 1.372.734 2.942 2.106 2.106a1.532 1.532 0 012.287.947c.379 1.561 2.6 1.561 2.978 0a1.533 1.533 0 012.287-.947c1.372.836 2.942-.734 2.106-2.106a1.533 1.533 0 01.947-2.287c1.561-.379 1.561-2.6 0-2.978a1.532 1.532 0 01-.947-2.287c.836-1.372-.734-2.942-2.106-2.106a1.532 1.532 0 01-2.287-.947zM10 13a3 3 0 100-6 3 3 0 000 6z" clip-rule="evenodd"/></svg>
+      Profiles
+    </a>
+    <a class="nav-item" data-page="settings-metadata" href="#">
+      <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clip-rule="evenodd"/></svg>
+      Metadata
+    </a>
+    <a class="nav-item" data-page="settings-storage" href="#">
+      <svg viewBox="0 0 20 20" fill="currentColor"><path d="M3 12v3c0 1.657 3.134 3 7 3s7-1.343 7-3v-3c0 1.657-3.134 3-7 3s-7-1.343-7-3z"/><path d="M3 7v3c0 1.657 3.134 3 7 3s7-1.343 7-3V7c0 1.657-3.134 3-7 3S3 8.657 3 7z"/><path d="M17 5c0 1.657-3.134 3-7 3S3 6.657 3 5s3.134-3 7-3 7 1.343 7 3z"/></svg>
+      Stockage
+    </a>
+    <a class="nav-item" data-page="settings-incoming" href="#">
+      <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M3 17a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm3.293-7.707a1 1 0 011.414 0L9 10.586V3a1 1 0 112 0v7.586l1.293-1.293a1 1 0 111.414 1.414l-3 3a1 1 0 01-1.414 0l-3-3a1 1 0 010-1.414z" clip-rule="evenodd"/></svg>
+      Incoming
+    </a>
+
+  </nav>
+  <div class="sidebar-footer">
+    <div class="status-dot" id="komga-status-dot"></div>
+    <span id="komga-status-label">Komga non configuré</span>
+  </div>
+</aside>
+
+<main id="main-content">
+
+  <!-- ══ COLLECTION ══ -->
+  <div class="page active" id="page-collection-local">
+    <div class="page-header">
+      <h1>Collection</h1>
+      <div class="header-actions">
+        <div class="tab-pills" style="display:flex;gap:4px;margin-right:8px">
+          <button id="tab-collection" class="tab-pill active" onclick="switchCollectionTab('browse')">Parcourir</button>
+          <button id="tab-add"        class="tab-pill"        onclick="switchCollectionTab('add')">+ Ajouter</button>
+        </div>
+        <select id="library-select" class="select-input" style="min-width:160px"></select>
+        <select id="per-page-select" class="select-input" onchange="changePerPage(this.value)">
+          <option value="15">15 par page</option>
+          <option value="25" selected>25 par page</option>
+          <option value="50">50 par page</option>
+        </select>
+        <button class="btn btn-primary" onclick="syncMetadata()" id="btn-sync-meta" title="Synchronise les métadonnées depuis MangaDB">
+          <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M11.49 3.17c-.38-1.56-2.6-1.56-2.98 0a1.532 1.532 0 01-2.286.948c-1.372-.836-2.942.734-2.106 2.106.54.886.061 2.042-.947 2.287-1.561.379-1.561 2.6 0 2.978a1.532 1.532 0 01.947 2.287c-.836 1.372.734 2.942 2.106 2.106a1.532 1.532 0 012.287.947c.379 1.561 2.6 1.561 2.978 0a1.533 1.533 0 012.287-.947c1.372.836 2.942-.734 2.106-2.106a1.533 1.533 0 01.947-2.287c1.561-.379 1.561-2.6 0-2.978a1.532 1.532 0 01-.947-2.287c.836-1.372-.734-2.942-2.106-2.106a1.532 1.532 0 01-2.287-.947zM10 13a3 3 0 100-6 3 3 0 000 6z" clip-rule="evenodd"/></svg>
+          Synchroniser MangaDB
+        </button>
+        <span id="sync-meta-status" class="status-msg" style="font-size:11px"></span>
+      </div>
+    </div>
+    <div class="search-bar-wrap">
+      <div class="collection-controls">
+        <input type="text" id="series-search" class="search-input" placeholder="Filtrer les séries…" oninput="filterSeries()">
+        <select id="status-filter" class="select-input" onchange="filterSeries()" style="min-width:190px">
+          <option value="">Tous les statuts</option>
+          <option value="termine">Terminé</option>
+          <option value="en_cours">En cours</option>
+          <option value="termine_incomplet">Terminé à compléter</option>
+          <option value="a_jour">À jour</option>
+        </select>
+        <select id="sort-order" class="select-input" onchange="filterSeries()" style="min-width:150px">
+          <option value="asc" selected>A → Z</option>
+          <option value="desc">Z → A</option>
+        </select>
+      </div>
+    </div>
+    <div id="series-grid" class="series-grid"></div>
+    <div id="pagination" class="pagination"></div>
+
+    <!-- ── Panneau "Ajouter une série" ── -->
+    <div id="panel-add-series" style="display:none;padding:0 4px">
+      <div class="settings-card">
+        <h2>Ajouter une série</h2>
+        <p class="hint">Recherchez une série dans la base de données liée à la librairie sélectionnée. Le dossier sera créé automatiquement.</p>
+        <div style="display:flex;gap:8px;margin-bottom:16px">
+          <input type="text" id="add-series-search" class="text-input" placeholder="Nom de la série…"
+                 onkeydown="if(event.key==='Enter') searchSeriesToAdd()"
+                 style="flex:1">
+          <button class="btn btn-primary" onclick="searchSeriesToAdd()">Rechercher</button>
+        </div>
+        <div id="add-series-results" style="display:flex;flex-direction:column;gap:8px;max-height:500px;overflow-y:auto"></div>
+        <div id="add-series-status" class="status-msg" style="margin-top:10px"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══ LOGS ══ -->
+  <div class="page" id="page-activity-logs">
+    <div class="page-header">
+      <h1>Activité — Logs</h1>
+      <button class="btn btn-danger" onclick="clearLogs()">Vider</button>
+    </div>
+    <div id="logs-container" class="logs-container"></div>
+  </div>
+
+  <!-- ══ INDEXERS ══ -->
+  <div class="page" id="page-indexers">
+    <div class="page-header">
+      <h1>Indexers</h1>
+      <div class="tab-pills" style="display:flex;gap:4px">
+        <button id="tab-idx-ebdz"    class="tab-pill active" onclick="switchIndexerTab('ebdz')">ebdz.net</button>
+        <button id="tab-idx-torznab" class="tab-pill"        onclick="switchIndexerTab('torznab')">Torznab</button>
+      </div>
+    </div>
+
+    <!-- ── Onglet ebdz ── -->
+    <div id="indexer-panel-ebdz">
+      <div class="settings-card">
+        <h2>ebdz.net — Cookie de session</h2>
+        <p class="hint">Trouvez la valeur de <code>mybbuser</code> dans les cookies de votre navigateur sur ebdz.net.</p>
+        <div class="form-row">
+          <label>mybbuser</label>
+          <input type="text" id="mybbuser-input" class="text-input" placeholder="Collez la valeur du cookie ici">
+        </div>
+        <div class="form-actions">
+          <button class="btn btn-primary" onclick="testIndexer()">Tester &amp; Sauvegarder</button>
+          <span id="indexer-status" class="status-msg"></span>
+        </div>
+      </div>
+      <div class="settings-card">
+        <h2>Scrape ebdz.net</h2>
+        <p class="hint">Récupère la liste des forums manga d'ebdz. Le scrape partiel (3 pages) se lance automatiquement toutes les 12h.</p>
+        <div id="ebdz-state-card" class="ebdz-state-card"></div>
+        <div class="form-actions" style="margin-top:12px">
+          <button class="btn btn-primary" onclick="startEbdzScrape('partial')">
+            <svg viewBox="0 0 20 20" fill="currentColor" style="width:14px;height:14px"><path fill-rule="evenodd" d="M4 2a1 1 0 011 1v2.101a7.002 7.002 0 0111.601 2.566 1 1 0 11-1.885.666A5.002 5.002 0 005.999 7H9a1 1 0 010 2H4a1 1 0 01-1-1V3a1 1 0 011-1z" clip-rule="evenodd"/></svg>
+            Scrape partiel (3 pages)
+          </button>
+          <button class="btn btn-secondary" onclick="startEbdzScrape('full')">Scrape complet</button>
+          <span id="ebdz-scrape-status" class="status-msg"></span>
+        </div>
+        <div class="form-row" style="margin-top:14px;border-top:1px solid var(--border);padding-top:14px">
+          <label>Fréquence du scrape automatique</label>
+          <div style="display:flex;align-items:center;gap:10px">
+            <select id="scrape-interval-select" class="select-input" style="width:200px" onchange="saveScrapeInterval(this.value)">
+              <option value="1">Toutes les heures</option>
+              <option value="3">Toutes les 3 heures</option>
+              <option value="6">Toutes les 6 heures</option>
+              <option value="12" selected>Toutes les 12 heures</option>
+              <option value="24">Une fois par jour</option>
+              <option value="48">Tous les 2 jours</option>
+              <option value="168">Une fois par semaine</option>
+            </select>
+            <span id="interval-save-status" class="status-msg"></span>
+          </div>
+        </div>
+      </div>
+      <div class="settings-card">
+        <h2>Traitement de fichiers</h2>
+        <p class="hint">Sélectionnez un dossier pour lancer conversion + renommage.</p>
+        <div class="form-row">
+          <label>Dossier</label>
+          <input type="text" id="rename-path" class="text-input" placeholder="/chemin/vers/Mangas">
+        </div>
+        <div class="form-actions">
+          <button class="btn btn-primary" onclick="launchProcess()">Lancer (conversion + renommage)</button>
+          <span id="process-status" class="status-msg"></span>
+        </div>
+        <div id="process-results" class="results-list"></div>
+      </div>
+    </div>
+
+    <!-- ── Onglet Torznab ── -->
+    <div id="indexer-panel-torznab" style="display:none">
+      <div class="settings-card">
+        <h2>Ajouter un indexer Torznab</h2>
+        <p class="hint">Entrez l'URL Torznab de votre indexer Prowlarr/Jackett et la clé API. La recherche se fera en catégorie <strong>Ebook (7000)</strong>.</p>
+        <div class="form-row">
+          <label>Nom</label>
+          <input type="text" id="torznab-name" class="text-input" placeholder="ex: Prowlarr — YGGTorrent">
+        </div>
+        <div class="form-row">
+          <label>URL Torznab</label>
+          <input type="text" id="torznab-url" class="text-input" placeholder="http://prowlarr:9696/1/api">
+        </div>
+        <div class="form-row">
+          <label>Clé API</label>
+          <input type="text" id="torznab-apikey" class="text-input" placeholder="Votre clé API Prowlarr/Jackett">
+        </div>
+        <div class="form-actions">
+          <button class="btn btn-primary" onclick="addTorznabIndexer()">Ajouter</button>
+          <span id="torznab-add-status" class="status-msg"></span>
+        </div>
+      </div>
+      <div class="settings-card">
+        <h2>Indexers configurés</h2>
+        <div id="torznab-indexers-list">
+          <p style="color:var(--text-dim);font-size:12px">Chargement…</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══ DOWNLOAD CLIENT ══ -->
+  <div class="page" id="page-settings-download-client">
+    <div class="page-header"><h1>Settings — Download Client</h1></div>
+
+    <div class="settings-card">
+      <h2>Dossier de surveillance qBittorrent</h2>
+      <p class="hint">
+        Défini via <code>MANGAARR_QBT_WATCH</code> dans ton <code>docker-compose.yml</code> — pas besoin de le configurer ici.<br>
+        MangaArr surveille ce dossier toutes les 60s et traite automatiquement les fichiers téléchargés.
+      </p>
+      <div class="form-row">
+        <label>Chemin actif</label>
+        <input type="text" id="qbt-watch-dir" class="text-input" readonly
+               style="background:var(--bg-input);color:var(--text-dim);cursor:default"
+               placeholder="Défini par MANGAARR_QBT_WATCH dans docker-compose.yml">
+      </div>
+    </div>
+
+    <div class="settings-card">
+      <h2>Ajouter un client qBittorrent</h2>
+      <div class="form-row">
+        <label>Nom</label>
+        <input type="text" id="dc-name" class="text-input" placeholder="ex: qBittorrent local">
+      </div>
+      <div class="form-row">
+        <label>Host</label>
+        <input type="text" id="dc-host" class="text-input" placeholder="localhost ou 192.168.1.x">
+      </div>
+      <div class="form-row">
+        <label>Port</label>
+        <input type="number" id="dc-port" class="text-input" value="8080" style="width:120px">
+      </div>
+      <div class="form-row">
+        <label>Nom d'utilisateur</label>
+        <input type="text" id="dc-username" class="text-input" placeholder="admin">
+      </div>
+      <div class="form-row">
+        <label>Mot de passe</label>
+        <input type="password" id="dc-password" class="text-input" placeholder="">
+      </div>
+      <div class="form-row">
+        <label>Catégorie</label>
+        <input type="text" id="dc-category" class="text-input" placeholder="Mangaarr">
+        <p class="hint" style="margin:4px 0 0">Catégorie qBittorrent utilisée lors de l'envoi des torrents.</p>
+      </div>
+      <div class="form-actions">
+        <button class="btn btn-primary" onclick="addDownloadClient()">Ajouter</button>
+        <span id="dc-add-status" class="status-msg"></span>
+      </div>
+    </div>
+    <div class="settings-card">
+      <h2>Clients configurés</h2>
+      <div id="download-clients-list">
+        <p style="color:var(--text-dim);font-size:12px">Chargement…</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══ LIBRAIRIES ══ -->
+  <div class="page" id="page-settings-libraries">
+    <div class="page-header">
+      <h1>Settings — Librairies</h1>
+      <button class="btn btn-primary" onclick="showAddLibraryModal()">+ Ajouter</button>
+    </div>
+    <p class="hint" style="padding:0 24px">
+      Chaque librairie est un dossier racine contenant des sous-dossiers de séries.<br>
+      <strong>Exemple :</strong> /media/Ebook/Mangas → librairie "Mangas"
+    </p>
+    <div id="libraries-list" style="padding:16px 24px;display:flex;flex-direction:column;gap:12px"></div>
+  </div>
+
+  <!-- ══ MEDIA MANAGEMENT ══ -->
+  <div class="page" id="page-settings-media">
+    <div class="page-header"><h1>Settings — Media Management</h1></div>
+    <div class="settings-card">
+      <h2>Automatisation</h2>
+      <div class="toggle-row">
+        <div><strong>Renommage automatique</strong><p>Format <code>{Titre}.T{XX}.FRENCH.CBZ.eBook-{TAG}</code></p></div>
+        <label class="toggle"><input type="checkbox" id="toggle-rename"><span class="toggle-slider"></span></label>
+      </div>
+      <div class="toggle-row">
+        <div><strong>Conversion CBR → CBZ</strong><p>Convertit les archives RAR en ZIP</p></div>
+        <label class="toggle"><input type="checkbox" id="toggle-cbr"><span class="toggle-slider"></span></label>
+      </div>
+      <div class="toggle-row">
+        <div><strong>Conversion PDF → CBZ</strong><p>Convertit les PDF en archives d'images</p></div>
+        <label class="toggle"><input type="checkbox" id="toggle-pdf"><span class="toggle-slider"></span></label>
+      </div>
+      <div class="toggle-row">
+        <div><strong>Remplacement automatique</strong><p>Remplace un tome si un meilleur tag est disponible</p></div>
+        <label class="toggle"><input type="checkbox" id="toggle-replace"><span class="toggle-slider"></span></label>
+      </div>
+      <div class="toggle-row">
+        <div><strong>Forcer l'organisation manuelle (Torrent)</strong><p>Affiche un bouton ▶ dans la queue Torrent pour forcer la copie/renommage en sélectionnant le fichier téléchargé. Désactivé par défaut.</p></div>
+        <label class="toggle"><input type="checkbox" id="toggle-force-organize"><span class="toggle-slider"></span></label>
+      </div>
+    </div>
+    <div class="settings-card">
+      <h2>Format de renommage</h2>
+      <p style="font-size:13px;color:var(--text-dim);margin-bottom:14px">Format utilisé pour nommer les fichiers lors de la copie dans la bibliothèque.</p>
+      <div style="display:flex;flex-direction:column;gap:12px">
+        <label style="display:flex;align-items:center;gap:10px;cursor:pointer;font-size:13px">
+          <input type="radio" name="rename-format" value="1" id="fmt-1" style="accent-color:var(--accent)">
+          <span><strong>Format 1</strong> (défaut) &nbsp;&mdash;&nbsp; <code style="font-size:12px;background:var(--bg-sidebar);padding:2px 6px;border-radius:4px">One Piece Tome 02 (Paprika+).cbz</code></span>
+        </label>
+        <label style="display:flex;align-items:center;gap:10px;cursor:pointer;font-size:13px">
+          <input type="radio" name="rename-format" value="2" id="fmt-2" style="accent-color:var(--accent)">
+          <span><strong>Format 2</strong> &nbsp;&mdash;&nbsp; <code style="font-size:12px;background:var(--bg-sidebar);padding:2px 6px;border-radius:4px">Tome 02 (Paprika+).cbz</code></span>
+        </label>
+        <label style="display:flex;align-items:center;gap:10px;cursor:pointer;font-size:13px">
+          <input type="radio" name="rename-format" value="3" id="fmt-3" style="accent-color:var(--accent)">
+          <span><strong>Format 3</strong> &nbsp;&mdash;&nbsp; <code style="font-size:12px;background:var(--bg-sidebar);padding:2px 6px;border-radius:4px">One.Piece.T02.FRENCH.CBZ.eBook-Paprika+.cbz</code></span>
+        </label>
+      </div>
+      <div class="form-actions"><button class="btn btn-primary" onclick="saveMediaSettings()">Sauvegarder</button></div>
+    </div>
+
+    <div class="settings-card">
+      <h2>Renommage de la bibliothèque</h2>
+      <p style="font-size:13px;color:var(--text-dim);margin-bottom:16px">
+        Renomme tous les fichiers de votre bibliothèque selon le format sélectionné ci-dessus.
+        Utilisez d'abord <strong>Prévisualiser</strong> pour voir les changements avant de les appliquer.
+      </p>
+
+      <!-- Boutons d'action -->
+      <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px">
+        <button class="btn btn-secondary" onclick="renameLibraryPreview()"
+                id="btn-rename-preview" style="display:flex;align-items:center;gap:6px">
+          <svg viewBox="0 0 20 20" fill="currentColor" style="width:14px;height:14px"><path d="M10 12a2 2 0 100-4 2 2 0 000 4z"/><path fill-rule="evenodd" d="M.458 10C1.732 5.943 5.522 3 10 3s8.268 2.943 9.542 7c-1.274 4.057-5.064 7-9.542 7S1.732 14.057.458 10zM14 10a4 4 0 11-8 0 4 4 0 018 0z" clip-rule="evenodd"/></svg>
+          Prévisualiser
+        </button>
+        <button class="btn btn-primary" onclick="renameLibraryConfirm()"
+                id="btn-rename-apply" style="display:flex;align-items:center;gap:6px">
+          <svg viewBox="0 0 20 20" fill="currentColor" style="width:14px;height:14px"><path fill-rule="evenodd" d="M4 2a1 1 0 011 1v2.101a7.002 7.002 0 0111.601 2.566 1 1 0 11-1.885.666A5.002 5.002 0 005.999 7H9a1 1 0 010 2H4a1 1 0 01-1-1V3a1 1 0 011-1zm.008 9.057a1 1 0 011.276.61A5.002 5.002 0 0014.001 13H11a1 1 0 110-2h5a1 1 0 011 1v5a1 1 0 11-2 0v-2.101a7.002 7.002 0 01-11.601-2.566 1 1 0 01.61-1.276z" clip-rule="evenodd"/></svg>
+          Renommer maintenant
+        </button>
+      </div>
+
+      <!-- Zone de résultat -->
+      <div id="rename-result" style="display:none;background:var(--bg-input);border:1px solid var(--border);border-radius:8px;overflow:hidden">
+        <div id="rename-result-summary" style="padding:12px 16px;font-size:13px;font-weight:600;border-bottom:1px solid var(--border)"></div>
+        <div id="rename-result-details" style="max-height:260px;overflow-y:auto;padding:8px 0;font-size:12px"></div>
+      </div>
+
+      <!-- Historique & Rollback -->
+      <div style="margin-top:20px">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+          <h3 style="margin:0;font-size:13px;font-weight:600;color:var(--text-dim)">Historique des renommages</h3>
+          <button class="btn btn-secondary" onclick="loadRenameHistory()" style="padding:4px 10px;font-size:11px">↺ Actualiser</button>
+        </div>
+        <div id="rename-history-list">
+          <p style="font-size:12px;color:var(--text-dim);margin:0">Chargement…</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="settings-card">
+      <h2>Dossier de destination</h2>
+      <div class="form-row">
+        <label>Chemin</label>
+        <input type="text" id="download-dir" class="text-input" placeholder="/home/user/Mangas">
+      </div>
+      <div class="form-actions"><button class="btn btn-primary" onclick="saveDownloadDir()">Sauvegarder</button></div>
+    </div>
+  </div>
+
+  <!-- ══ PROFILES ══ -->
+  <div class="page" id="page-settings-profiles">
+    <div class="page-header"><h1>Settings — Profiles de qualité</h1></div>
+
+    <!-- Tags avec scores -->
+    <div class="settings-card">
+      <h2>Mots clés &amp; Scores</h2>
+      <p class="hint">Plus le score est élevé, meilleure est la qualité. Les mots clés avec un score plus haut remplacent ceux avec un score plus bas.</p>
+      <div id="tags-list" class="tags-score-list"></div>
+      <div class="add-tag-row">
+        <input type="text" id="new-tag-name" class="text-input" placeholder="Nom du mot clé" style="flex:1">
+        <input type="number" id="new-tag-score" class="text-input" placeholder="Score (0-100)" min="0" max="100" style="width:140px">
+        <button class="btn btn-primary" onclick="addTag()">+ Ajouter</button>
+      </div>
+      <div id="tag-add-status" class="status-msg" style="margin-top:8px"></div>
+      <div class="form-actions" style="margin-top:16px"><button class="btn btn-primary" onclick="saveProfiles()">Sauvegarder les scores</button></div>
+    </div>
+
+    <!-- Must Contain -->
+    <div class="settings-card">
+      <h2>Doit Contenir</h2>
+      <p class="hint">La release doit contenir au moins un de ces termes (insensible à la casse).</p>
+      <div id="must-contain-tags" class="keyword-tags"></div>
+      <div class="add-keyword-row">
+        <input type="text" id="must-contain-input" class="text-input" placeholder="Ajouter un terme…" style="flex:1" onkeydown="if(event.key==='Enter')addKeyword('must_contain')">
+        <button class="btn btn-primary" onclick="addKeyword('must_contain')">Ajouter</button>
+      </div>
+    </div>
+
+    <!-- Must Not Contain -->
+    <div class="settings-card">
+      <h2>Ne Doit Pas Contenir</h2>
+      <p class="hint">La release sera rejetée si elle contient un de ces termes.</p>
+      <div id="must-not-contain-tags" class="keyword-tags"></div>
+      <div class="add-keyword-row">
+        <input type="text" id="must-not-contain-input" class="text-input" placeholder="Ajouter un terme…" style="flex:1" onkeydown="if(event.key==='Enter')addKeyword('must_not_contain')">
+        <button class="btn btn-primary" onclick="addKeyword('must_not_contain')">Ajouter</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══ METADATA ══ -->
+  <div class="page" id="page-settings-metadata">
+    <div class="page-header">
+      <h1>Settings — Metadata</h1>
+      <button class="btn btn-primary" onclick="showAddSourceModal()">+ Ajouter une source</button>
+    </div>
+    <div id="metadata-sources-list"></div>
+    <!-- Fréquence synchronisation auto -->
+    <div class="settings-card" style="margin-top:16px">
+      <h2>Synchronisation automatique</h2>
+      <p class="hint">MangaArr synchronise automatiquement les métadonnées (auteurs, genres, statuts, nb tomes VF) à la fréquence choisie pour toutes les sources configurées.</p>
+      <div class="form-row">
+        <label>Fréquence</label>
+        <div style="display:flex;align-items:center;gap:10px">
+          <select id="meta-sync-interval" class="select-input" style="width:220px" onchange="saveMetaSyncInterval(this.value)">
+            <option value="0">Désactivée (manuel uniquement)</option>
+            <option value="6">Toutes les 6 heures</option>
+            <option value="12">Toutes les 12 heures</option>
+            <option value="24" selected>Une fois par jour</option>
+            <option value="72">Tous les 3 jours</option>
+            <option value="168">Une fois par semaine</option>
+          </select>
+          <span id="meta-sync-status" class="status-msg"></span>
+        </div>
+      </div>
+      <div id="meta-sync-next" style="font-size:11px;color:var(--text-dim);margin-top:6px"></div>
+    </div>
+  </div>
+
+  <!-- ══ STOCKAGE ══ -->
+  <div class="page" id="page-settings-storage">
+    <div class="page-header"><h1>Settings — Stockage</h1></div>
+    <div class="settings-card">
+      <h2>Cache des métadonnées</h2>
+      <p class="hint">MangaArr met en cache les métadonnées des séries (auteur, genres, statut, nb tomes VF) pour éviter de scanner la base de données à chaque ouverture de bibliothèque.</p>
+      <div id="cache-stats" class="cache-stats-grid"></div>
+    </div>
+    <div class="settings-card">
+      <h2>Cache des couvertures</h2>
+      <p class="hint">Les couvertures de séries et de tomes sont extraites des fichiers CBZ et mises en cache pour un affichage rapide. Elles sont recréées automatiquement si le fichier source change.</p>
+      <div id="covers-cache-stats" style="font-size:13px;color:var(--text-dim);margin-bottom:12px"></div>
+      <div class="form-actions">
+        <button class="btn btn-danger btn-sm" onclick="clearCoversCache()">Vider le cache covers</button>
+        <span id="covers-cache-status" class="status-msg"></span>
+      </div>
+      <div style="margin-top:18px; display:flex; align-items:center; gap:12px; flex-wrap:wrap">
+        <button class="btn btn-danger" onclick="clearAllCache()">
+          <svg viewBox="0 0 20 20" fill="currentColor" style="width:14px;height:14px"><path fill-rule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clip-rule="evenodd"/></svg>
+          Effacer le cache
+        </button>
+        <button class="btn btn-secondary" onclick="loadCacheStats()">Rafraîchir</button>
+        <span id="cache-clear-status" class="status-msg"></span>
+      </div>
+      <p class="hint" style="margin-top:14px; border-top:1px solid var(--border); padding-top:12px">
+        <strong>Ce que fait l'effacement du cache :</strong><br>
+        Supprime les données mises en mémoire locale — auteurs, genres, statuts VF, nombres de tomes — associées à vos séries Komga. 
+        La prochaine ouverture d'une bibliothèque liée à une source MangaDB relancera automatiquement l'enrichissement en arrière-plan. 
+        Vos fichiers manga et vos données Komga ne sont pas affectés.
+      </p>
+    </div>
+  </div>
+
+
+
+  <!-- ══ QUEUE ══ -->
+  <div class="page" id="page-activity-queue">
+    <div class="page-header">
+      <h1>Activity — Queue</h1>
+      <div class="header-actions">
+        <div class="tab-pills" style="display:flex;gap:4px;margin-right:8px">
+          <button id="tab-queue-emule"   class="tab-pill active" onclick="switchQueueTab('emule')">eMule</button>
+          <button id="tab-queue-torrent" class="tab-pill"        onclick="switchQueueTab('torrent')">Torrent <span id="torrent-queue-badge" class="nav-badge" style="display:none;background:var(--accent);color:#000">0</span></button>
+          <button id="tab-queue-monitor" class="tab-pill"        onclick="switchQueueTab('monitor')">
+            <svg viewBox="0 0 20 20" fill="currentColor" style="width:12px;height:12px;margin-right:3px"><path d="M10 12a2 2 0 100-4 2 2 0 000 4z"/><path fill-rule="evenodd" d="M.458 10C1.732 5.943 5.522 3 10 3s8.268 2.943 9.542 7c-1.274 4.057-5.064 7-9.542 7S1.732 14.057.458 10zM14 10a4 4 0 11-8 0 4 4 0 018 0z" clip-rule="evenodd"/></svg>
+            Surveillance
+          </button>
+        </div>
+        <span id="queue-dest-label" class="status-msg" style="font-size:11px;color:var(--text-dim)"></span>
+      </div>
+    </div>
+
+    <!-- ══ Onglet eMule ══ -->
+    <div id="queue-panel-emule">
+      <div class="search-bar-wrap">
+        <div class="collection-controls" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+          <input type="text" id="queue-search" class="search-input" placeholder="Filtrer par série…" oninput="filterQueueTable()">
+          <select id="queue-series-select" class="select-input" style="min-width:200px;max-width:320px" title="Sélectionner une série ou toutes">
+            <option value="">Toutes les séries</option>
+          </select>
+          <button class="btn btn-primary" onclick="detectMissing()">
+            <svg viewBox="0 0 20 20" fill="currentColor" style="width:14px;height:14px"><path fill-rule="evenodd" d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z" clip-rule="evenodd"/></svg>
+            Détecter manquants
+          </button>
+          <button class="btn btn-secondary" onclick="generateCollection()">
+            <svg viewBox="0 0 20 20" fill="currentColor" style="width:14px;height:14px"><path fill-rule="evenodd" d="M3 17a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zM6.293 6.707a1 1 0 010-1.414l3-3a1 1 0 011.414 0l3 3a1 1 0 01-1.414 1.414L11 5.414V13a1 1 0 11-2 0V5.414L7.707 6.707a1 1 0 01-1.414 0z" clip-rule="evenodd"/></svg>
+            .emulecollection
+          </button>
+          <button class="btn btn-secondary btn-sm" onclick="applyQueueFilters()">Appliquer filtres</button>
+          <button class="btn btn-danger btn-sm" onclick="clearQueue('done')">Purger terminés</button>
+          <button class="btn btn-danger btn-sm" id="btn-delete-emule" style="display:none" onclick="deleteSelectedEmule()">
+            <svg viewBox="0 0 20 20" fill="currentColor" style="width:13px;height:13px"><path fill-rule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clip-rule="evenodd"/></svg>
+            Supprimer sélectionnés
+          </button>
+        </div>
+      </div>
+      <div id="queue-stats-bar" class="queue-stats-bar"></div>
+      <div class="queue-table-wrap">
+        <table class="queue-table" id="queue-table">
+          <thead>
+            <tr>
+              <th style="width:30px"><input type="checkbox" id="emule-select-all" onchange="toggleSelectAllEmule(this)" title="Tout sélectionner"></th>
+              <th class="queue-th-sortable" onclick="sortQueueBy('series')" style="cursor:pointer;user-select:none">Série <span id="queue-sort-icon">↕</span></th>
+              <th>Fichier</th><th>Tome</th><th>Tag</th><th>Progression</th>
+            </tr>
+          </thead>
+          <tbody id="queue-tbody"></tbody>
+        </table>
+        <div id="queue-empty" class="empty-state" style="display:none">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+          <p>Aucun téléchargement en queue.<br>Cliquez sur "Détecter manquants" pour lancer une analyse.</p>
+        </div>
+      </div>
+      <div id="queue-pagination" class="pagination"></div>
+      <div class="settings-card" style="margin-top:20px">
+        <h2>Fichiers .emulecollection générés</h2>
+        <div id="collections-list"></div>
+      </div>
+    </div>
+
+    <!-- ══ Onglet Torrent ══ -->
+    <div id="queue-panel-torrent" style="display:none">
+      <div class="search-bar-wrap">
+        <div class="collection-controls" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+          <input type="text" id="torrent-queue-search" class="search-input" placeholder="Filtrer par série…" oninput="filterTorrentQueueTable()">
+          <button class="btn btn-primary" onclick="scanTorrentIncoming(this)">
+            <svg viewBox="0 0 20 20" fill="currentColor" style="width:14px;height:14px"><path fill-rule="evenodd" d="M4 2a1 1 0 011 1v2.101a7.002 7.002 0 0111.601 2.566 1 1 0 11-1.885.666A5.002 5.002 0 005.999 7H9a1 1 0 010 2H4a1 1 0 01-1-1V3a1 1 0 011-1zm.008 9.057a1 1 0 011.276.61A5.002 5.002 0 0014.001 13H11a1 1 0 110-2h5a1 1 0 011 1v5a1 1 0 11-2 0v-2.101a7.002 7.002 0 01-11.601-2.566 1 1 0 01.61-1.276z" clip-rule="evenodd"/></svg>
+            Scanner maintenant
+          </button>
+          <span id="torrent-scan-status" class="status-msg" style="font-size:12px"></span>
+          <button class="btn btn-danger btn-sm" onclick="clearTorrentQueue()">Purger terminés</button>
+          <button class="btn btn-danger btn-sm" id="btn-delete-torrent" style="display:none" onclick="deleteSelectedTorrent()">
+            <svg viewBox="0 0 20 20" fill="currentColor" style="width:13px;height:13px"><path fill-rule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clip-rule="evenodd"/></svg>
+            Supprimer sélectionnés
+          </button>
+        </div>
+      </div>
+      <div id="torrent-queue-stats" class="queue-stats-bar"></div>
+      <div class="queue-table-wrap">
+        <table class="queue-table">
+          <thead>
+            <tr>
+              <th style="width:30px"><input type="checkbox" id="torrent-select-all" onchange="toggleSelectAllTorrent(this)" title="Tout sélectionner"></th>
+              <th class="queue-th-sortable" onclick="sortTorrentQueueBy('series')" style="cursor:pointer;user-select:none">Série <span id="torrent-sort-icon">↕</span></th>
+              <th>Release</th><th>Tome(s)</th><th>Type</th><th>Progression</th>
+            </tr>
+          </thead>
+          <tbody id="torrent-queue-tbody"></tbody>
+        </table>
+        <div id="torrent-queue-empty" class="empty-state" style="display:none">
+          <p>Aucun torrent en queue.<br>Utilisez le bouton <strong>Torrent</strong> sur une page de série.</p>
+        </div>
+      </div>
+      <div id="torrent-queue-pagination" class="pagination"></div>
+      <div class="settings-card" style="margin-top:20px">
+        <h2>Découverte automatique</h2>
+        <p class="hint">
+          La page Découverte scanne toutes tes séries incomplètes, cherche des releases Torznab disponibles
+          et te propose de les télécharger après validation.
+        </p>
+        <a href="/discover" class="btn btn-primary" style="display:inline-flex;align-items:center;gap:6px;text-decoration:none">
+          <svg viewBox="0 0 20 20" fill="currentColor" style="width:14px;height:14px"><path fill-rule="evenodd" d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z" clip-rule="evenodd"/></svg>
+          Ouvrir la page Découverte →
+        </a>
+      </div>
+    </div>
+
+    <!-- ══ Onglet Surveillance ══ -->
+    <div id="queue-panel-monitor" style="display:none">
+      <div class="search-bar-wrap">
+        <div class="collection-controls" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+          <input type="text" id="monitor-search" class="search-input" placeholder="Filtrer par série…" oninput="filterMonitorList()">
+          <button class="btn btn-primary" onclick="refreshMonitoring()">
+            <svg viewBox="0 0 20 20" fill="currentColor" style="width:14px;height:14px"><path fill-rule="evenodd" d="M4 2a1 1 0 011 1v2.101a7.002 7.002 0 0111.601 2.566 1 1 0 11-1.885.666A5.002 5.002 0 005.999 7H9a1 1 0 010 2H4a1 1 0 01-1-1V3a1 1 0 011-1z" clip-rule="evenodd"/></svg>
+            Analyser les manquants
+          </button>
+          <span id="monitor-status" class="status-msg"></span>
+        </div>
+      </div>
+      <p class="hint" style="padding:0 24px 8px">
+        Analyse vos librairies et cherche des releases Torznab pour les tomes manquants. Cliquez sur une série pour voir les détails.
+      </p>
+      <div id="monitor-list" style="padding:0 24px">
+        <p style="color:var(--text-dim);font-size:12px">Cliquez sur "Analyser les manquants" pour démarrer.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══ INCOMING ══ -->
+  <div class="page" id="page-settings-incoming">
+    <div class="page-header"><h1>Settings — Incoming eMule</h1></div>
+    <div class="settings-card">
+      <h2>Dossier Incoming eMule/aMule</h2>
+      <p class="hint">
+        En mode container, ce chemin est défini par la variable d'environnement <code>MANGAARR_INCOMING</code> dans ton <code>docker-compose.yml</code>.
+        Il est appliqué automatiquement au démarrage — pas besoin de le saisir ici.
+      </p>
+      <div class="form-row">
+        <label>Chemin actif</label>
+        <input type="text" id="incoming-dir" class="text-input" readonly
+               style="background:var(--bg-input);color:var(--text-dim);cursor:default"
+               placeholder="Défini par MANGAARR_INCOMING dans docker-compose.yml">
+      </div>
+      <p class="hint" style="margin-top:8px">
+        Pour changer : modifie le volume et la variable <code>MANGAARR_INCOMING</code> dans ton <code>docker-compose.yml</code>, puis redémarre le container.
+      </p>
+      <div style="margin-top:10px;padding:10px 12px;background:var(--bg-input);border-radius:6px;font-size:12px">
+        <strong style="color:var(--success)">✓ Scan automatique actif</strong> — MangaArr scanne le dossier Incoming côté serveur
+        toutes les <strong id="incoming-interval-display">60</strong> secondes, même si tu n'as pas la page Queue ouverte.<br>
+        Pour changer la fréquence : variable <code>MANGAARR_INCOMING_INTERVAL</code> (en secondes) dans <code>docker-compose.yml</code>.
+      </div>
+    </div>
+    <div class="settings-card">
+      <h2>Dossier de destination des séries</h2>
+      <p class="hint">
+        En mode container, ce chemin est défini par la variable d'environnement <code>MANGAARR_DEST</code> dans ton <code>docker-compose.yml</code>.
+        Il est appliqué automatiquement — pas besoin de le saisir ici.
+      </p>
+      <div class="form-row">
+        <label>Chemin actif</label>
+        <input type="text" id="incoming-download-dir" class="text-input" readonly
+               style="background:var(--bg-input);color:var(--text-dim);cursor:default"
+               placeholder="Défini par MANGAARR_DEST dans docker-compose.yml">
+      </div>
+      <p class="hint" style="margin-top:8px">
+        Pour changer : modifie le volume et la variable <code>MANGAARR_DEST</code> dans ton <code>docker-compose.yml</code>, puis redémarre le container.
+      </p>
+    </div>
+    <div class="settings-card">
+      <h2>Traitement automatique</h2>
+      <p class="hint">Lorsqu'un fichier est détecté comme terminé dans le dossier Incoming, MangaArr peut le traiter automatiquement.</p>
+      <div class="toggle-row">
+        <div>
+          <strong>Copie automatique vers le dossier série</strong>
+          <p>Copie le fichier dans le sous-dossier de la série correspondante dans le dossier de destination</p>
+        </div>
+        <label class="toggle"><input type="checkbox" id="toggle-auto-organize"><span class="toggle-slider"></span></label>
+      </div>
+      <div class="toggle-row">
+        <div>
+          <strong>Conversion automatique (CBR/PDF → CBZ)</strong>
+          <p>Convertit les fichiers CBR et PDF en CBZ avant la copie (selon les réglages Media Management)</p>
+        </div>
+        <label class="toggle"><input type="checkbox" id="toggle-auto-convert"><span class="toggle-slider"></span></label>
+      </div>
+      <div class="toggle-row">
+        <div>
+          <strong>Renommage automatique après copie</strong>
+          <p>Renomme le fichier au format MangaArr après la copie (utilise les règles de Settings &gt; Profiles)</p>
+        </div>
+        <label class="toggle"><input type="checkbox" id="toggle-rename"><span class="toggle-slider"></span></label>
+      </div>
+      <div class="form-actions">
+        <button class="btn btn-primary" onclick="saveIncomingSettings()">Sauvegarder</button>
+        <span id="incoming-settings-status" class="status-msg"></span>
+      </div>
+    </div>
+  </div>
+
+
+</main>
+
+
+<!-- ── MODAL: Ajouter Source Metadata ── -->
+<div id="modal-add-source" class="modal-overlay hidden">
+  <div class="modal" style="width:560px">
+    <div class="modal-header"><h2>Ajouter une source Metadata</h2><button class="modal-close" onclick="closeModal('modal-add-source')">✕</button></div>
+    <div class="modal-body">
+      <div class="form-row"><label>Nom</label><input type="text" id="source-name" class="text-input" value="MangaDB" placeholder="MangaDB"></div>
+      <div class="form-row"><label>URL</label><input type="text" id="source-url" class="text-input" placeholder="https://mangadb.uncloudy-nextcloudy.ovh"></div>
+      <div class="form-row">
+        <label>Librairies associées</label>
+        <div id="source-libraries-list" class="checkbox-list"></div>
+      </div>
+      <div id="source-test-result" class="status-msg"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="closeModal('modal-add-source')">Annuler</button>
+      <button class="btn btn-primary" onclick="addSource()">Ajouter</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── TOAST ── -->
+<div id="task-toast" class="task-toast hidden">
+  <div class="toast-spinner"></div>
+  <span id="task-toast-label">En cours…</span>
+</div>
+
+<script src="/static/js/app.js"></script>
+
+<!-- ── MODAL: File Browser — Ajouter librairie ── -->
+<div id="modal-file-browser" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:1000;align-items:center;justify-content:center">
+  <div style="background:var(--bg-card);border-radius:12px;padding:0;width:580px;max-width:95vw;max-height:90vh;display:flex;flex-direction:column;border:1px solid var(--border)">
+    <!-- Header -->
+    <div style="padding:20px 24px 16px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center">
+      <h2 style="margin:0;font-size:16px">Ajouter une librairie</h2>
+      <button onclick="closeFileBrowser()" style="background:none;border:none;color:var(--text-dim);font-size:20px;cursor:pointer">✕</button>
+    </div>
+    <!-- Chemin courant -->
+    <div style="padding:10px 24px;background:var(--bg-input);border-bottom:1px solid var(--border);font-size:12px;font-family:monospace;color:var(--text-dim)">
+      <span style="color:var(--text)">📁 </span><span id="lib-browser-current">/media</span>
+    </div>
+    <!-- Liste dossiers -->
+    <div id="lib-browser-list" style="flex:1;overflow-y:auto;min-height:200px;max-height:360px;padding:8px 0"></div>
+    <!-- Sélection + nom -->
+    <div style="padding:16px 24px;border-top:1px solid var(--border)">
+      <div style="font-size:11px;color:var(--text-dim);margin-bottom:6px">Dossier sélectionné :</div>
+      <div id="lib-browser-selected" style="font-family:monospace;font-size:12px;color:var(--accent);min-height:18px;margin-bottom:12px"></div>
+      <div style="display:flex;gap:8px;align-items:center;margin-bottom:12px">
+        <label style="font-size:13px;white-space:nowrap">Nom de la librairie</label>
+        <input type="text" id="lib-name-input" class="text-input" placeholder="ex: Mangas, BD, Comics" style="flex:1">
+      </div>
+      <div id="lib-browser-status" style="font-size:12px;min-height:16px;margin-bottom:10px"></div>
+      <div style="display:flex;gap:8px;justify-content:flex-end">
+        <button onclick="closeFileBrowser()" class="btn btn-secondary">Annuler</button>
+        <button onclick="confirmAddLibrary()" class="btn btn-primary">Ajouter cette librairie</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+</body>
+</html>
