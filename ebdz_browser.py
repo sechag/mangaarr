@@ -65,8 +65,10 @@ def fetch_and_rewrite(url: str, mybbuser: str) -> dict:
             a["title"] = "Ajouter à la queue MangaArr"
         elif abs_url.startswith(EBDZ_BASE):
             # Lien interne → passe par le proxy
-            a["href"] = f"{PROXY_PATH}?url={quote(abs_url, safe='')}"
-            a.pop("target", None)
+            # safe=':/?=&#' évite le double-encodage quand le navigateur suit le lien
+            a["href"] = f"{PROXY_PATH}?url={quote(abs_url, safe=':/?=&#')}"
+            if a.get("target"):
+                del a["target"]
         else:
             # Lien externe → nouvelle fenêtre
             a["target"] = "_blank"
@@ -86,7 +88,7 @@ def fetch_and_rewrite(url: str, mybbuser: str) -> dict:
     for form in soup.find_all("form", action=True):
         abs_action = urljoin(final_url, form["action"])
         if abs_action.startswith(EBDZ_BASE):
-            form["action"] = f"{PROXY_PATH}?url={quote(abs_action, safe='')}"
+            form["action"] = f"{PROXY_PATH}?url={quote(abs_action, safe=':/?=&#')}"
 
     # Injecte un script qui notifie le parent de l'URL courante
     inject = soup.new_tag("script")
