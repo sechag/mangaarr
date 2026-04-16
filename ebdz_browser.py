@@ -53,7 +53,10 @@ def fetch_and_rewrite(url: str, mybbuser: str) -> dict:
     # Réécrit les liens <a href>
     for a in soup.find_all("a", href=True):
         href = a["href"].strip()
-        abs_url = urljoin(final_url, href)
+        try:
+            abs_url = urljoin(final_url, href)
+        except ValueError:
+            continue
 
         if href.lower().startswith("ed2k://"):
             # Lien ed2k → intercepte via postMessage vers la page parent
