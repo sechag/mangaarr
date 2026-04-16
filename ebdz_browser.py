@@ -33,11 +33,27 @@ def _normalize_ed2k(raw: str) -> str:
     return raw
 
 
+def _collect_ed2k(raw: str, seen: set, links: list):
+    """Nettoyage + normalisation + parse d'un candidat ed2k brut."""
+    import ebdz_scraper
+    raw = raw.split('"')[0].split("'")[0].split("<")[0].split(">")[0].strip()
+    normalized = _normalize_ed2k(raw)
+    parsed = ebdz_scraper.parse_ed2k(normalized)
+    if parsed and parsed["filehash"] not in seen:
+        seen.add(parsed["filehash"])
+        links.append(parsed)
+
+
 def extract_ed2k_from_page(url: str, mybbuser: str) -> dict:
     """
-    Fetche une page ebdz.net et extrait tous les liens ed2k (bruts ou réécrits).
-    Retourne {"ok": bool, "links": [{url, filename, filesize, filehash, tome_number, tag}]}
+    Fetche une page ebdz.net et extrait tous les liens ed2k.
+    Trois passes pour ne rien rater :
+      1. BeautifulSoup → attributs href/onclick décodés (gère &#124; → |)
+      2. Regex sur le texte brut (liens en texte, JS inline)
+      3. Regex sur html.unescape(texte) (entités HTML dans le texte)
+    Retourne {"ok": bool, "links": [...], "total": int}
     """
+    import html as _html
     if not (url.startswith("https://ebdz.net") or url.startswith("http://ebdz.net")):
         return {"ok": False, "links": [], "message": "URL non autorisée"}
 
@@ -49,20 +65,39 @@ def extract_ed2k_from_page(url: str, mybbuser: str) -> dict:
     except Exception as e:
         return {"ok": False, "links": [], "message": f"Erreur réseau : {e}"}
 
-    import ebdz_scraper
-    seen = set()
+    seen  = set()
     links = []
+
+    # ── Passe 1 : BeautifulSoup décode les entités HTML dans les attributs ──
+    soup = BeautifulSoup(html_text, "html.parser")
+    for tag in soup.find_all(True):
+        for attr in ("href", "onclick", "data-link", "value"):
+            val = tag.get(attr, "") or ""
+            if not val:
+                continue
+            # extrait tous les candidats ed2k dans la valeur décodée
+            for pat in _ED2K_PATTERNS:
+                for raw in re.findall(pat, val):
+                    _collect_ed2k(raw, seen, links)
+            # cas spécial : ed2k:// collé à d'autres caractères
+            for raw in re.findall(r'ed2k://[^\s"\'<>]+', val):
+                _collect_ed2k(raw, seen, links)
+
+    # ── Passe 2 : regex sur le texte brut ──
     for pat in _ED2K_PATTERNS:
         for raw in re.findall(pat, html_text):
-            # Nettoyage fin de chaîne
-            raw = raw.split('"')[0].split("'")[0].split("<")[0].split(">")[0]
-            normalized = _normalize_ed2k(raw)
-            parsed = ebdz_scraper.parse_ed2k(normalized)
-            if parsed and parsed["filehash"] not in seen:
-                seen.add(parsed["filehash"])
-                links.append(parsed)
+            _collect_ed2k(raw, seen, links)
 
-    return {"ok": True, "links": links}
+    # ── Passe 3 : regex sur le texte avec entités décodées ──
+    unescaped = _html.unescape(html_text)
+    for pat in _ED2K_PATTERNS:
+        for raw in re.findall(pat, unescaped):
+            _collect_ed2k(raw, seen, links)
+    # ed2k:// libre dans le texte décodé
+    for raw in re.findall(r'ed2k://[^\s"\'<>]+', unescaped):
+        _collect_ed2k(raw, seen, links)
+
+    return {"ok": True, "links": links, "total": len(links)}
 
 EBDZ_BASE  = "https://ebdz.net"
 EBDZ_HOME  = "https://ebdz.net/forum/forumdisplay.php?fid=29"
