@@ -2414,12 +2414,13 @@ def api_resolve_pending():
 
         tome_str = str(n) if n else item_ref.get("tome_number", "")
         result   = _fo.organize_file(item={
-            "local_path":  fp,
-            "series_name": series_name,
-            "tome_number": tome_str,
-            "filename":    fname,
-            "action":      action,
-            "owned_file":  owned_file,
+            "local_path":   fp,
+            "series_name":  series_name,
+            "tome_number":  tome_str,
+            "filename":     fname,
+            "action":       action,
+            "owned_file":   owned_file,
+            "series_exact": item_ref.get("series_exact", False),
         })
         if result.get("ok"):
             updated += 1
@@ -2690,6 +2691,7 @@ def _do_scan_incoming() -> dict:
                 "filename":     item.get("filename", ""),
                 "action":       action,
                 "owned_file":   owned_file,
+                "series_exact": item.get("series_exact", False),
             })
             if result.get("ok"):
                 dest = result.get("dest_path", "")
