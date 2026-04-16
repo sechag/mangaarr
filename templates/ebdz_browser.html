@@ -1,0 +1,305 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <title>eBDZ — MangaArr</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:        #0f1117;
+      --bg-card:   #1a1d27;
+      --bg-sidebar:#13151f;
+      --border:    #2a2d3e;
+      --accent:    #7c6aff;
+      --success:   #22c55e;
+      --warning:   #f59e0b;
+      --danger:    #ef4444;
+      --text:      #e2e8f0;
+      --text-dim:  #64748b;
+    }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    /* ── Toolbar ── */
+    #toolbar {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 12px;
+      background: var(--bg-sidebar);
+      border-bottom: 1px solid var(--border);
+      flex-shrink: 0;
+    }
+
+    #toolbar a.back-home {
+      color: var(--text-dim);
+      text-decoration: none;
+      font-size: 13px;
+      padding: 4px 10px;
+      border-radius: 6px;
+      border: 1px solid var(--border);
+      white-space: nowrap;
+    }
+    #toolbar a.back-home:hover { color: var(--text); border-color: var(--accent); }
+
+    .tb-btn {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      color: var(--text);
+      border-radius: 6px;
+      padding: 5px 10px;
+      cursor: pointer;
+      font-size: 13px;
+      white-space: nowrap;
+    }
+    .tb-btn:hover { border-color: var(--accent); }
+    .tb-btn:disabled { opacity: .4; cursor: default; }
+
+    #url-bar {
+      flex: 1;
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      color: var(--text);
+      padding: 5px 10px;
+      font-size: 12px;
+      font-family: monospace;
+    }
+    #url-bar:focus { outline: none; border-color: var(--accent); }
+
+    #nav-status {
+      font-size: 11px;
+      color: var(--text-dim);
+      white-space: nowrap;
+    }
+
+    /* ── Toast queue ── */
+    #ed2k-toast {
+      position: fixed;
+      bottom: 20px;
+      right: 20px;
+      z-index: 9999;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      pointer-events: none;
+    }
+    .toast-item {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 10px 14px;
+      font-size: 12px;
+      max-width: 340px;
+      pointer-events: all;
+      animation: fadeIn .2s ease;
+    }
+    .toast-item.ok   { border-left: 3px solid var(--success); }
+    .toast-item.err  { border-left: 3px solid var(--danger);  }
+    @keyframes fadeIn { from { opacity:0; transform:translateY(8px); } to { opacity:1; } }
+
+    /* ── Panel série (sélection rapide) ── */
+    #series-panel {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,.75);
+      z-index: 8000;
+      align-items: center;
+      justify-content: center;
+    }
+    #series-panel.open { display: flex; }
+    #series-panel-inner {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 20px;
+      width: 400px;
+      max-width: 95vw;
+    }
+    #series-panel-inner h3 { font-size: 14px; margin-bottom: 12px; }
+    #series-panel-inner input {
+      width: 100%;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      color: var(--text);
+      padding: 7px 10px;
+      font-size: 13px;
+      margin-bottom: 10px;
+    }
+    #series-panel-inner input:focus { outline: none; border-color: var(--accent); }
+    .sp-actions { display: flex; gap: 8px; justify-content: flex-end; }
+    .btn-acc { background: var(--accent); color: #fff; border: none; border-radius: 6px; padding: 7px 16px; cursor: pointer; font-size: 13px; font-weight: 600; }
+    .btn-can { background: none; border: 1px solid var(--border); border-radius: 6px; color: var(--text); padding: 7px 16px; cursor: pointer; font-size: 13px; }
+    .sp-file  { font-size: 11px; color: var(--text-dim); margin-bottom: 8px; word-break: break-all; }
+
+    /* ── Iframe ── */
+    #browser-frame {
+      flex: 1;
+      border: none;
+      width: 100%;
+      background: #fff;
+    }
+
+    #loader {
+      position: absolute;
+      top: 50px;
+      left: 0; right: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      pointer-events: none;
+      font-size: 13px;
+      color: var(--text-dim);
+    }
+  </style>
+</head>
+<body>
+
+<!-- Toolbar -->
+<div id="toolbar">
+  <a class="back-home" href="/">← MangaArr</a>
+  <button class="tb-btn" onclick="navBack()">‹</button>
+  <button class="tb-btn" id="btn-home" onclick="navTo('{{ home_url }}')">⌂</button>
+  <input id="url-bar" type="text" value="{{ home_url }}"
+         onkeydown="if(event.key==='Enter') navTo(this.value.trim())">
+  <button class="tb-btn" onclick="navTo(document.getElementById('url-bar').value.trim())">Go</button>
+  <span id="nav-status"></span>
+</div>
+
+<!-- Iframe -->
+<iframe id="browser-frame"
+        src="/api/ebdz-proxy?url={{ home_url|urlencode }}"
+        onload="onFrameLoad()"
+        sandbox="allow-forms allow-same-origin allow-scripts">
+</iframe>
+<div id="loader">Chargement…</div>
+
+<!-- Toasts ed2k -->
+<div id="ed2k-toast"></div>
+
+<!-- Panel sélection série -->
+<div id="series-panel">
+  <div id="series-panel-inner">
+    <h3>Ajouter à la queue</h3>
+    <div class="sp-file" id="sp-filename"></div>
+    <input id="sp-series" type="text" placeholder="Nom de la série (optionnel)">
+    <div class="sp-actions">
+      <button class="btn-can" onclick="closeSeriesPanel()">Annuler</button>
+      <button class="btn-acc" onclick="confirmAddEd2k()">Ajouter ✓</button>
+    </div>
+  </div>
+</div>
+
+<script>
+  let _history = [];
+  let _pendingEd2k = null;
+
+  const frame     = document.getElementById('browser-frame');
+  const urlBar    = document.getElementById('url-bar');
+  const navStatus = document.getElementById('nav-status');
+  const loader    = document.getElementById('loader');
+
+  function navTo(url) {
+    if (!url) return;
+    loader.style.display = 'flex';
+    frame.src = `/api/ebdz-proxy?url=${encodeURIComponent(url)}`;
+    urlBar.value = url;
+  }
+
+  function navBack() {
+    if (_history.length > 1) {
+      _history.pop();
+      const prev = _history.pop();
+      navTo(prev);
+    }
+  }
+
+  function onFrameLoad() {
+    loader.style.display = 'none';
+  }
+
+  // Écoute les messages de l'iframe
+  window.addEventListener('message', async (e) => {
+    if (!e.data || typeof e.data !== 'object') return;
+
+    if (e.data.type === 'nav') {
+      const url = e.data.url || '';
+      urlBar.value = url;
+      _history.push(url);
+      navStatus.textContent = '';
+    }
+
+    if (e.data.type === 'ed2k') {
+      _pendingEd2k = e.data.url;
+      // Extrait le nom de fichier du lien ed2k pour pré-remplir
+      const m = e.data.url.match(/\|file\|([^|]+)\|/);
+      const filename = m ? decodeURIComponent(m[1]) : e.data.url;
+      document.getElementById('sp-filename').textContent = filename;
+      document.getElementById('sp-series').value = '';
+      document.getElementById('series-panel').classList.add('open');
+      document.getElementById('sp-series').focus();
+    }
+  });
+
+  async function confirmAddEd2k() {
+    if (!_pendingEd2k) return;
+    const seriesName = document.getElementById('sp-series').value.trim();
+    closeSeriesPanel();
+
+    navStatus.textContent = 'Ajout en cours…';
+    try {
+      const r = await fetch('/api/ebdz-proxy/add-ed2k', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({url: _pendingEd2k, series_name: seriesName}),
+      }).then(r => r.json());
+
+      showToast(
+        r.ok ? `✓ ${r.filename || 'Ajouté'}` : `✗ ${r.message || 'Erreur'}`,
+        r.ok ? 'ok' : 'err'
+      );
+      navStatus.textContent = r.ok ? `✓ Ajouté` : `✗ Erreur`;
+      setTimeout(() => { navStatus.textContent = ''; }, 3000);
+    } catch(err) {
+      showToast('Erreur réseau', 'err');
+    }
+    _pendingEd2k = null;
+  }
+
+  function closeSeriesPanel() {
+    document.getElementById('series-panel').classList.remove('open');
+    _pendingEd2k = null;
+  }
+
+  // Ferme le panel si on clique en dehors
+  document.getElementById('series-panel').addEventListener('click', e => {
+    if (e.target === document.getElementById('series-panel')) closeSeriesPanel();
+  });
+
+  // Valide avec Entrée dans le champ série
+  document.getElementById('sp-series').addEventListener('keydown', e => {
+    if (e.key === 'Enter') confirmAddEd2k();
+    if (e.key === 'Escape') closeSeriesPanel();
+  });
+
+  function showToast(msg, type='ok') {
+    const el = document.createElement('div');
+    el.className = `toast-item ${type}`;
+    el.textContent = msg;
+    document.getElementById('ed2k-toast').appendChild(el);
+    setTimeout(() => el.remove(), 4000);
+  }
+</script>
+</body>
+</html>

@@ -21,6 +21,7 @@ import ebdz_scraper, mangadb_client, cache as cache_mod, queue_manager
 import library_manager as lib_mgr
 import torznab_client, qbittorrent_client
 import discover_manager
+import ebdz_browser
 
 # Dossier de stockage des fichiers .torrent téléchargés
 TORRENT_FILES_DIR = os.environ.get("MANGAARR_TORRENT_FILES", "/torrent_files")
@@ -572,6 +573,51 @@ def api_torrent_scan_incoming():
 @app.route("/discover")
 def page_discover():
     return render_template("discover.html")
+
+
+@app.route("/ebdz")
+def page_ebdz_browser():
+    return render_template("ebdz_browser.html", home_url=ebdz_browser.EBDZ_HOME)
+
+
+@app.route("/api/ebdz-proxy")
+def api_ebdz_proxy():
+    url = request.args.get("url", "").strip() or ebdz_browser.EBDZ_HOME
+    cfg      = config.load()
+    mybbuser = cfg.get("mybbuser", "")
+    if not mybbuser:
+        return ("<p style='font-family:sans-serif;color:red;padding:20px'>"
+                "Cookie ebdz non configuré (Settings &gt; Indexers)</p>"), 200
+    result = ebdz_browser.fetch_and_rewrite(url, mybbuser)
+    return result["html"], 200, {"Content-Type": "text/html; charset=utf-8"}
+
+
+@app.route("/api/ebdz-proxy/add-ed2k", methods=["POST"])
+def api_ebdz_add_ed2k():
+    """Ajoute un lien ed2k intercepté depuis le navigateur ebdz à la queue."""
+    d           = request.json or {}
+    url         = d.get("url", "").strip()
+    series_name = d.get("series_name", "").strip()
+    if not url or not url.lower().startswith("ed2k://"):
+        return jsonify({"ok": False, "message": "Lien ed2k invalide"})
+    parsed = ebdz_scraper.parse_ed2k(url)
+    if not parsed:
+        return jsonify({"ok": False, "message": "Impossible de parser le lien ed2k"})
+    item = {
+        "filename":    parsed["filename"],
+        "filesize":    parsed["filesize"],
+        "filehash":    parsed["filehash"],
+        "url":         parsed["url"],
+        "tome_number": parsed.get("tome_number", ""),
+        "tag":         parsed.get("tag", ""),
+        "series_name": series_name,
+        "action":      "missing",
+    }
+    r = queue_manager.add_to_queue([item])
+    if r["added"]:
+        queue_manager.generate_emulecollection(label="ebdz-browser")
+    return jsonify({"ok": True, "added": r["added"], "skipped": r["skipped"],
+                    "filename": parsed["filename"]})
 
 
 @app.route("/api/discover/series")
