@@ -675,14 +675,15 @@ def api_ebdz_generate_collection():
         if not parsed:
             continue
         items.append({
-            "filename":    parsed["filename"],
-            "filesize":    parsed["filesize"],
-            "filehash":    parsed["filehash"],
-            "url":         parsed["url"],
-            "tome_number": it.get("tome_number") or parsed.get("tome_number", ""),
-            "tag":         parsed.get("tag", ""),
-            "series_name": series_name,
-            "action":      "missing",
+            "filename":     parsed["filename"],
+            "filesize":     parsed["filesize"],
+            "filehash":     parsed["filehash"],
+            "url":          parsed["url"],
+            "tome_number":  it.get("tome_number") or parsed.get("tome_number", ""),
+            "tag":          parsed.get("tag", ""),
+            "series_name":  series_name,
+            "series_exact": True,   # nom fourni explicitement → pas de fuzzy matching
+            "action":       "missing",
         })
 
     if not items:
@@ -711,14 +712,15 @@ def api_ebdz_add_ed2k():
     if not parsed:
         return jsonify({"ok": False, "message": "Impossible de parser le lien ed2k"})
     item = {
-        "filename":    parsed["filename"],
-        "filesize":    parsed["filesize"],
-        "filehash":    parsed["filehash"],
-        "url":         parsed["url"],
-        "tome_number": parsed.get("tome_number", ""),
-        "tag":         parsed.get("tag", ""),
-        "series_name": series_name,
-        "action":      "missing",
+        "filename":     parsed["filename"],
+        "filesize":     parsed["filesize"],
+        "filehash":     parsed["filehash"],
+        "url":          parsed["url"],
+        "tome_number":  parsed.get("tome_number", ""),
+        "tag":          parsed.get("tag", ""),
+        "series_name":  series_name,
+        "series_exact": bool(series_name),  # nom fourni explicitement → pas de fuzzy
+        "action":       "missing",
     }
     r = queue_manager.add_to_queue([item])
     if r["added"]:

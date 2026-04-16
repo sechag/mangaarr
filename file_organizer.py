@@ -123,9 +123,9 @@ def find_series_folder(series_name: str, root_dir: str) -> str | None:
     """
     Cherche le dossier d'une série dans root_dir.
     Priorité :
-      1. Exact match insensible à la casse (respecte le nom explicite de l'utilisateur)
+      1. Exact match insensible à la casse
       2. Exact match après normalisation (accents, apostrophes…)
-      3. Matching flou ≥ 0.80 (seuil relevé pour éviter les faux positifs)
+      3. Matching flou ≥ 0.65 (comportement général)
     """
     if not series_name or not os.path.isdir(root_dir):
         return None
@@ -148,21 +148,19 @@ def find_series_folder(series_name: str, root_dir: str) -> str | None:
 
         # ── Passe 1 : exact match insensible à la casse ──
         if entry.strip().lower() == name_lower:
-            return full  # correspondance parfaite, inutile d'aller plus loin
+            return full
 
         # ── Passe 2 : exact match normalisé ──
         if _cache._normalize(entry) == name_norm:
             return full
 
-        # ── Passe 3 : fuzzy (fallback) ──
+        # ── Passe 3 : fuzzy ──
         score = _cache._similarity(series_name, entry)
         if score > best_score:
             best_score  = score
             best_folder = full
 
-    # Seuil relevé à 0.80 : on préfère créer un nouveau dossier plutôt que
-    # de matcher une série différente (ex. "C'était nous" ≠ "C'était nous - Edition Double")
-    return best_folder if best_score >= 0.80 else None
+    return best_folder if best_score >= 0.65 else None
 
 
 # ═══════════════════════════════════════════════════
@@ -194,18 +192,20 @@ def organize_file(item: dict | None = None, filepath: str | None = None) -> dict
 
     # Résolution du fichier source
     if item:
-        src_path    = item.get("local_path", "")
-        series_name = item.get("series_name", "")
-        raw_tome    = str(item.get("tome_number", "") or "")
-        tome_number = raw_tome.lstrip("Tt").lstrip("0") or "0"
-        action      = item.get("action", "missing")    # "missing" ou "upgrade"
-        owned_file  = item.get("owned_file", "")       # fichier à remplacer si upgrade
+        src_path     = item.get("local_path", "")
+        series_name  = item.get("series_name", "")
+        raw_tome     = str(item.get("tome_number", "") or "")
+        tome_number  = raw_tome.lstrip("Tt").lstrip("0") or "0"
+        action       = item.get("action", "missing")    # "missing" ou "upgrade"
+        owned_file   = item.get("owned_file", "")       # fichier à remplacer si upgrade
+        series_exact = item.get("series_exact", False)  # nom de série fourni explicitement
     elif filepath:
-        src_path    = filepath
-        series_name = None
-        tome_number = None
-        action      = "missing"
-        owned_file  = ""
+        src_path     = filepath
+        series_name  = None
+        tome_number  = None
+        action       = "missing"
+        owned_file   = ""
+        series_exact = False
     else:
         return {"ok": False, "message": "Aucun fichier fourni"}
 
@@ -225,24 +225,23 @@ def organize_file(item: dict | None = None, filepath: str | None = None) -> dict
     log(f"Identification : '{series_name}' T{tome_number} — {filename}")
 
     # ── Trouve le dossier de destination dans les librairies configurées ──
-    # Priorité : exact match > fuzzy ≥ 0.80 > création d'un nouveau dossier
     dest_folder = None
     try:
         import library_manager as _lm, cache as _cache
-        libraries = _lm.get_libraries()
+        libraries   = _lm.get_libraries()
+        name_lower  = series_name.strip().lower()
+        name_norm   = _cache._normalize(series_name)
 
-        exact_folder = None   # exact match (casse / normalisation)
+        exact_folder = None
         best_score   = 0.0
         best_folder  = None
         best_lib     = None
-        name_lower   = series_name.strip().lower()
-        name_norm    = _cache._normalize(series_name)
 
         for lib in libraries:
             if not os.path.isdir(lib["path"]):
                 continue
 
-            # ── Exact match prioritaire dans cette librairie ──
+            # ── Exact match dans cette librairie (toujours prioritaire) ──
             for entry in os.listdir(lib["path"]):
                 full = os.path.join(lib["path"], entry)
                 if not os.path.isdir(full):
@@ -250,19 +249,20 @@ def organize_file(item: dict | None = None, filepath: str | None = None) -> dict
                 if entry.strip().lower() == name_lower or _cache._normalize(entry) == name_norm:
                     exact_folder = full
                     best_lib     = lib
-                    break  # trouvé, pas besoin de continuer dans cette lib
+                    break
 
             if exact_folder:
-                break  # pas besoin de chercher dans d'autres libs
+                break
 
-            # ── Fuzzy fallback ──
-            found = find_series_folder(series_name, lib["path"])
-            if found:
-                score = _cache._similarity(series_name, os.path.basename(found))
-                if score > best_score:
-                    best_score  = score
-                    best_folder = found
-                    best_lib    = lib
+            # ── Fuzzy : uniquement si le nom n'est PAS fourni de façon explicite ──
+            if not series_exact:
+                found = find_series_folder(series_name, lib["path"])
+                if found:
+                    score = _cache._similarity(series_name, os.path.basename(found))
+                    if score > best_score:
+                        best_score  = score
+                        best_folder = found
+                        best_lib    = lib
 
         if exact_folder:
             dest_folder = exact_folder
