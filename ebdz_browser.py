@@ -58,9 +58,24 @@ def fetch_and_rewrite(url: str, mybbuser: str) -> dict:
         except ValueError:
             continue
 
+        # Normalise les variantes https://ed2k//... → ed2k://...
+        ed2k_url = None
         if href.lower().startswith("ed2k://"):
+            ed2k_url = href
+        else:
+            for pref, repl in [
+                ("https://ed2k//", "ed2k://"),
+                ("http://ed2k//",  "ed2k://"),
+                ("https://ed2k/",  "ed2k://"),
+                ("http://ed2k/",   "ed2k://"),
+            ]:
+                if href.lower().startswith(pref):
+                    ed2k_url = repl + href[len(pref):]
+                    break
+
+        if ed2k_url is not None:
             # Lien ed2k → intercepte via postMessage vers la page parent
-            safe = href.replace("\\", "\\\\").replace("'", "\\'")
+            safe = ed2k_url.replace("\\", "\\\\").replace("'", "\\'")
             a["href"] = "#"
             a["onclick"] = f"parent.postMessage({{type:'ed2k',url:'{safe}'}}, '*'); return false;"
             a["style"] = (a.get("style", "") +

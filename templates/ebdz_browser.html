@@ -603,9 +603,17 @@
 
   function renderCollectionResults(items) {
     const ul = document.getElementById('col-results');
-    ul.innerHTML = items.length
-      ? items.map(s => `<li onclick="setActiveSeries(${JSON.stringify(s)})">${esc(s)}</li>`).join('')
-      : '<li style="color:var(--text-dim);cursor:default">Aucun résultat</li>';
+    ul.innerHTML = '';
+    if (!items.length) {
+      ul.innerHTML = '<li style="color:var(--text-dim);cursor:default">Aucun résultat</li>';
+      return;
+    }
+    items.forEach(s => {
+      const li = document.createElement('li');
+      li.textContent = s;
+      li.addEventListener('click', () => setActiveSeries(s));
+      ul.appendChild(li);
+    });
   }
 
   // ── Tab MangaDB ──
@@ -620,9 +628,18 @@
         const items = r.results || [];
         document.getElementById('mdb-note').textContent = '';
         const ul = document.getElementById('mdb-results');
-        ul.innerHTML = items.length
-          ? items.map(it => `<li onclick="selectMangaDB(${JSON.stringify(it.titre || it.title || it.name || String(it))})">${esc(it.titre || it.title || it.name || String(it))}</li>`).join('')
-          : '<li style="color:var(--text-dim);cursor:default">Aucun résultat</li>';
+        ul.innerHTML = '';
+        if (!items.length) {
+          ul.innerHTML = '<li style="color:var(--text-dim);cursor:default">Aucun résultat</li>';
+        } else {
+          items.forEach(it => {
+            const titre = it.titre || it.title || it.name || String(it);
+            const li = document.createElement('li');
+            li.textContent = titre;
+            li.addEventListener('click', () => selectMangaDB(titre));
+            ul.appendChild(li);
+          });
+        }
       } catch(e) {
         document.getElementById('mdb-note').textContent = 'Erreur recherche';
       }
