@@ -588,8 +588,15 @@ def api_ebdz_proxy():
     if not mybbuser:
         return ("<p style='font-family:sans-serif;color:red;padding:20px'>"
                 "Cookie ebdz non configuré (Settings &gt; Indexers)</p>"), 200
-    result = ebdz_browser.fetch_and_rewrite(url, mybbuser)
-    return result["html"], 200, {"Content-Type": "text/html; charset=utf-8"}
+    try:
+        result = ebdz_browser.fetch_and_rewrite(url, mybbuser)
+        return result["html"], 200, {"Content-Type": "text/html; charset=utf-8"}
+    except Exception as e:
+        import traceback
+        err = traceback.format_exc()
+        app.logger.error(f"[ebdz-proxy] {e}\n{err}")
+        return (f"<pre style='font-family:monospace;padding:20px;color:red'>"
+                f"Erreur proxy:\n{err}</pre>"), 200
 
 
 @app.route("/api/ebdz-proxy/add-ed2k", methods=["POST"])
