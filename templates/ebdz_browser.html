@@ -457,11 +457,36 @@
       <div id="sb-empty-links">Cliquez sur "Détecter" pour extraire les liens ed2k de la page courante</div>
     </div>
 
+    <!-- Paste manuel -->
+    <div class="sb-section" style="padding-top:6px;">
+      <div class="sb-label">Coller des liens manuellement</div>
+      <textarea id="sb-paste-area" placeholder="Coller un ou plusieurs liens ed2k ici, un par ligne…" style="
+        width:100%; height:64px; resize:vertical;
+        background:var(--bg-card); border:1px solid var(--border);
+        border-radius:6px; color:var(--text); padding:6px 8px;
+        font-size:11px; font-family:monospace;
+      "></textarea>
+      <button onclick="addPastedLinks()" style="
+        width:100%; margin-top:5px;
+        background:var(--bg-card); border:1px solid var(--border);
+        border-radius:6px; color:var(--text); cursor:pointer;
+        font-size:12px; padding:5px 8px;">
+        Ajouter les liens collés
+      </button>
+    </div>
+
     <!-- Footer generate -->
     <div id="sb-footer">
       <div id="sb-footer-info"></div>
       <button id="btn-generate" onclick="generateCollection()" disabled>
         Générer .emulecollection
+      </button>
+      <button id="btn-send-emule" onclick="sendToEmule()" disabled style="
+        width:100%; margin-top:5px;
+        background:#1a2e1a; border:1px solid #22c55e44;
+        border-radius:6px; color:#22c55e; cursor:pointer;
+        font-size:13px; font-weight:600; padding:8px;">
+        Envoyer à eMule
       </button>
       <button id="btn-clear-links" onclick="clearLinks()">Vider la liste</button>
     </div>
@@ -801,12 +826,13 @@
   }
 
   function updateFooter() {
-    const info = document.getElementById('sb-footer-info');
-    const btn  = document.getElementById('btn-generate');
-    const count = _ed2kLinks.length;
-    const hasSeries = !!_activeSeries;
+    const info       = document.getElementById('sb-footer-info');
+    const btnGen     = document.getElementById('btn-generate');
+    const btnEmule   = document.getElementById('btn-send-emule');
+    const count      = _ed2kLinks.length;
+    const hasSeries  = !!_activeSeries;
     if (!hasSeries && count > 0) {
-      info.textContent = 'Sélectionnez une série';
+      info.textContent = 'Sélectionnez une série pour .emulecollection';
       info.style.color = 'var(--warning)';
     } else if (count > 0) {
       info.textContent = `${count} lien${count>1?'s':''} · ${_activeSeries}`;
@@ -814,7 +840,71 @@
     } else {
       info.textContent = '';
     }
-    btn.disabled = !(hasSeries && count > 0);
+    btnGen.disabled   = !(hasSeries && count > 0);
+    btnEmule.disabled = count === 0;
+  }
+
+  // ── Collage manuel ──
+  function addPastedLinks() {
+    const area = document.getElementById('sb-paste-area');
+    const raw  = area.value.trim();
+    if (!raw) return;
+    const lines = raw.split(/[\r\n]+/).map(l => l.trim()).filter(Boolean);
+    let added = 0;
+    lines.forEach(line => {
+      // normalise https://ed2k// → ed2k://
+      let url = line;
+      for (const [pref, repl] of [
+        ['https://ed2k//', 'ed2k://'], ['http://ed2k//', 'ed2k://'],
+        ['https://ed2k/', 'ed2k://'],  ['http://ed2k/',  'ed2k://'],
+      ]) {
+        if (url.toLowerCase().startsWith(pref)) { url = repl + url.slice(pref.length); break; }
+      }
+      if (!url.toLowerCase().startsWith('ed2k://')) return;
+      if (_ed2kLinks.find(l => l.url === url)) return;
+      const m = url.match(/\|file\|([^|]+)\|/);
+      const filename = m ? decodeURIComponent(m[1]) : url;
+      _ed2kLinks.push({ url, filename, tome_number: detectTome(filename) });
+      added++;
+    });
+    if (added > 0) {
+      renderLinks();
+      updateFooter();
+      area.value = '';
+      showToast(`✓ ${added} lien${added>1?'s':''} ajouté${added>1?'s':''}`, 'ok');
+      if (sidebar.classList.contains('collapsed')) toggleSidebar();
+    } else {
+      showToast('Aucun lien ed2k valide trouvé', 'warn');
+    }
+  }
+
+  // ── Envoyer à eMule ──
+  async function sendToEmule() {
+    if (_ed2kLinks.length === 0) return;
+    const btn = document.getElementById('btn-send-emule');
+    btn.disabled = true;
+    btn.textContent = 'Envoi…';
+    navStatus.textContent = 'Envoi à eMule…';
+    try {
+      const urls = _ed2kLinks.map(l => l.url);
+      const r = await fetch('/api/ebdz-proxy/send-to-emule', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ urls }),
+      }).then(r => r.json());
+      showToast(r.message || (r.ok ? '✓ Envoyé' : '✗ Erreur'), r.ok ? 'ok' : 'err');
+      navStatus.textContent = r.ok ? `✓ ${r.sent}/${r.total} envoyé(s)` : '✗ Erreur eMule';
+      if (r.ok) {
+        _ed2kLinks = [];
+        renderLinks();
+      }
+    } catch(e) {
+      showToast('Erreur réseau', 'err');
+    }
+    btn.textContent = 'Envoyer à eMule';
+    btn.disabled = false;
+    setTimeout(() => { navStatus.textContent = ''; }, 3000);
+    updateFooter();
   }
 
   // ════════════════════════════════

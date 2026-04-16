@@ -261,6 +261,80 @@ def api_download_clients_info():
     })
 
 
+@app.route("/api/settings/emule", methods=["GET"])
+def api_get_emule_settings():
+    return jsonify({
+        "ok":           True,
+        "emule_url":    config.get("emule_url", ""),
+        "emule_password_set": bool(config.get("emule_password", "")),
+    })
+
+@app.route("/api/settings/emule", methods=["POST"])
+def api_save_emule_settings():
+    d   = request.json or {}
+    cfg = config.load()
+    if "emule_url" in d:
+        cfg["emule_url"] = d["emule_url"].strip().rstrip("/")
+    if "emule_password" in d:
+        cfg["emule_password"] = d["emule_password"]
+    config.save(cfg)
+    return jsonify({"ok": True})
+
+@app.route("/api/settings/emule/test", methods=["POST"])
+def api_test_emule():
+    import hashlib, requests as _req
+    url = config.get("emule_url", "").strip()
+    pwd = config.get("emule_password", "")
+    if not url:
+        return jsonify({"ok": False, "message": "URL eMule non configurée"})
+    md5_pwd = hashlib.md5(pwd.encode("utf-8")).hexdigest()
+    try:
+        r = _req.get(f"{url}/", params={"webgui_password": md5_pwd}, timeout=8)
+        if r.status_code == 200:
+            return jsonify({"ok": True, "message": f"Connecté ({r.status_code})"})
+        return jsonify({"ok": False, "message": f"HTTP {r.status_code}"})
+    except Exception as e:
+        return jsonify({"ok": False, "message": str(e)})
+
+@app.route("/api/ebdz-proxy/send-to-emule", methods=["POST"])
+def api_send_to_emule():
+    """
+    Envoie une liste de liens ed2k à l'interface web eMule/aMule.
+    Body: {urls: ["ed2k://...", ...]}
+    Protocole aMule web : GET /?webgui_password=MD5&action=add_link&link=ENCODED
+    """
+    import hashlib, requests as _req
+    d    = request.json or {}
+    urls = d.get("urls", [])
+    if not urls:
+        return jsonify({"ok": False, "message": "Aucun lien fourni"})
+    emule_url = config.get("emule_url", "").strip()
+    emule_pwd = config.get("emule_password", "")
+    if not emule_url:
+        return jsonify({"ok": False, "message": "URL eMule non configurée (Settings > Download Client)"})
+    md5_pwd = hashlib.md5(emule_pwd.encode("utf-8")).hexdigest()
+    sent = 0
+    errors = []
+    for ed2k_url in urls:
+        try:
+            r = _req.get(
+                f"{emule_url}/",
+                params={"webgui_password": md5_pwd, "action": "add_link", "link": ed2k_url},
+                timeout=10,
+            )
+            if r.status_code < 400:
+                sent += 1
+            else:
+                errors.append(f"HTTP {r.status_code}")
+        except Exception as e:
+            errors.append(str(e))
+    ok = sent > 0
+    msg = f"{sent}/{len(urls)} lien(s) envoyé(s)"
+    if errors:
+        msg += f" — {errors[0]}"
+    return jsonify({"ok": ok, "sent": sent, "total": len(urls), "message": msg})
+
+
 # ════════════════════════════════════════════════════════
 # TORRENT — RECHERCHE
 # ════════════════════════════════════════════════════════
