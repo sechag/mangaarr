@@ -445,9 +445,16 @@
     <!-- ed2k links list -->
     <div class="sb-section" style="border-bottom:none; padding-bottom:4px;">
       <div class="sb-label">Liens collectés <span id="sb-count" style="color:var(--accent)"></span></div>
+      <button id="btn-detect" onclick="detectLinks()" style="
+        width:100%; margin-top:6px;
+        background:var(--bg-card); border:1px solid var(--border);
+        border-radius:6px; color:var(--text); cursor:pointer;
+        font-size:12px; padding:6px 8px; text-align:left;">
+        Détecter les liens ed2k de cette page
+      </button>
     </div>
     <div id="sb-links-area">
-      <div id="sb-empty-links">Cliquez sur un lien ed2k dans le navigateur pour l'ajouter ici</div>
+      <div id="sb-empty-links">Cliquez sur "Détecter" pour extraire les liens ed2k de la page courante</div>
     </div>
 
     <!-- Footer generate -->
@@ -664,6 +671,57 @@
   // ════════════════════════════════
   // ed2k links management
   // ════════════════════════════════
+
+  async function detectLinks() {
+    const currentUrl = urlBar.value.trim();
+    if (!currentUrl || !currentUrl.startsWith('http')) {
+      showToast('Naviguez d\'abord vers une page ebdz', 'warn');
+      return;
+    }
+    const btn = document.getElementById('btn-detect');
+    btn.textContent = 'Détection en cours…';
+    btn.disabled = true;
+
+    try {
+      const r = await fetch(`/api/ebdz-proxy/extract-ed2k?url=${encodeURIComponent(currentUrl)}`)
+                       .then(r => r.json());
+
+      if (!r.ok) {
+        showToast(`✗ ${r.message || 'Erreur'}`, 'err');
+        return;
+      }
+
+      const links = r.links || [];
+      if (links.length === 0) {
+        showToast('Aucun lien ed2k trouvé sur cette page', 'warn');
+        return;
+      }
+
+      let added = 0;
+      links.forEach(link => {
+        if (_ed2kLinks.find(l => l.url === link.url)) return; // déduplique
+        _ed2kLinks.push({
+          url:         link.url,
+          filename:    link.filename,
+          tome_number: link.tome_number || '',
+        });
+        added++;
+      });
+
+      renderLinks();
+      updateFooter();
+      showToast(`✓ ${added} lien${added > 1 ? 's' : ''} ajouté${added > 1 ? 's' : ''}`, 'ok');
+      // Ouvre la sidebar si fermée
+      if (sidebar.classList.contains('collapsed')) toggleSidebar();
+
+    } catch(e) {
+      showToast('Erreur réseau', 'err');
+    } finally {
+      btn.textContent = 'Détecter les liens ed2k de cette page';
+      btn.disabled = false;
+    }
+  }
+
   function addEd2kLink(url) {
     // avoid duplicates
     if (_ed2kLinks.find(l => l.url === url)) {

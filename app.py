@@ -599,6 +599,21 @@ def api_ebdz_proxy():
                 f"Erreur proxy:\n{err}</pre>"), 200
 
 
+@app.route("/api/ebdz-proxy/extract-ed2k")
+def api_ebdz_extract_ed2k():
+    """
+    Extrait côté serveur tous les liens ed2k d'une page ebdz.net.
+    GET /api/ebdz-proxy/extract-ed2k?url=https://ebdz.net/forum/showthread.php?tid=...
+    Retourne {ok, links: [{url, filename, filesize, filehash, tome_number, tag}]}
+    """
+    url      = request.args.get("url", "").strip()
+    mybbuser = config.get("mybbuser", "")
+    if not url:
+        return jsonify({"ok": False, "links": [], "message": "URL manquante"})
+    result = ebdz_browser.extract_ed2k_from_page(url, mybbuser)
+    return jsonify(result)
+
+
 @app.route("/api/ebdz-proxy/generate-collection", methods=["POST"])
 def api_ebdz_generate_collection():
     """

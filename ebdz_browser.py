@@ -5,11 +5,64 @@ ebdz_browser.py — Proxy de navigation ebdz.net pour MangaArr
 - Réécrit tous les liens internes pour naviguer via le proxy
 - Intercepte les liens ed2k via postMessage vers la page parent
 - Réécrit les images pour les servir directement depuis ebdz.net
+- extract_ed2k_from_page() : extraction serveur-side des liens ed2k d'une page
 """
 import re, requests
 from urllib.parse import urljoin, quote
 from bs4 import BeautifulSoup
 import config
+
+# Patterns identiques à ebdz_scraper pour détecter les deux formats ed2k
+_ED2K_PATTERNS = [
+    r'ed2k://\|file\|[^"<>\s\']+',
+    r'https?://ed2k//?(?:\|file\|)[^"<>\s\']+',
+]
+_ED2K_PREFIXES = [
+    ("https://ed2k//", "ed2k://"),
+    ("http://ed2k//",  "ed2k://"),
+    ("https://ed2k/",  "ed2k://"),
+    ("http://ed2k/",   "ed2k://"),
+]
+
+
+def _normalize_ed2k(raw: str) -> str:
+    """Normalise les variantes https://ed2k// → ed2k://"""
+    for pref, repl in _ED2K_PREFIXES:
+        if raw.lower().startswith(pref):
+            return repl + raw[len(pref):]
+    return raw
+
+
+def extract_ed2k_from_page(url: str, mybbuser: str) -> dict:
+    """
+    Fetche une page ebdz.net et extrait tous les liens ed2k (bruts ou réécrits).
+    Retourne {"ok": bool, "links": [{url, filename, filesize, filehash, tome_number, tag}]}
+    """
+    if not (url.startswith("https://ebdz.net") or url.startswith("http://ebdz.net")):
+        return {"ok": False, "links": [], "message": "URL non autorisée"}
+
+    session = make_session(mybbuser)
+    try:
+        r = session.get(url, timeout=15, allow_redirects=True)
+        r.raise_for_status()
+        html_text = r.text
+    except Exception as e:
+        return {"ok": False, "links": [], "message": f"Erreur réseau : {e}"}
+
+    import ebdz_scraper
+    seen = set()
+    links = []
+    for pat in _ED2K_PATTERNS:
+        for raw in re.findall(pat, html_text):
+            # Nettoyage fin de chaîne
+            raw = raw.split('"')[0].split("'")[0].split("<")[0].split(">")[0]
+            normalized = _normalize_ed2k(raw)
+            parsed = ebdz_scraper.parse_ed2k(normalized)
+            if parsed and parsed["filehash"] not in seen:
+                seen.add(parsed["filehash"])
+                links.append(parsed)
+
+    return {"ok": True, "links": links}
 
 EBDZ_BASE  = "https://ebdz.net"
 EBDZ_HOME  = "https://ebdz.net/forum/forumdisplay.php?fid=29"
