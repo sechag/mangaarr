@@ -170,8 +170,8 @@
 <div id="toolbar">
   <a class="back-home" href="/">← MangaArr</a>
   <button class="tb-btn" onclick="navBack()">‹</button>
-  <button class="tb-btn" id="btn-home" onclick="navTo('{{ home_url }}')">⌂</button>
-  <input id="url-bar" type="text" value="{{ home_url }}"
+  <button class="tb-btn" id="btn-home" onclick="navTo(HOME_URL)">⌂</button>
+  <input id="url-bar" type="text" placeholder="URL ebdz.net…"
          onkeydown="if(event.key==='Enter') navTo(this.value.trim())">
   <button class="tb-btn" onclick="navTo(document.getElementById('url-bar').value.trim())">Go</button>
   <span id="nav-status"></span>
@@ -179,7 +179,7 @@
 
 <!-- Iframe -->
 <iframe id="browser-frame"
-        src="/api/ebdz-proxy?url={{ home_url|urlencode }}"
+        src=""
         onload="onFrameLoad()"
         sandbox="allow-forms allow-same-origin allow-scripts">
 </iframe>
@@ -202,13 +202,19 @@
 </div>
 
 <script>
-  let _history = [];
+  const HOME_URL  = {{ home_url | tojson }};
+
+  let _history    = [];
   let _pendingEd2k = null;
 
   const frame     = document.getElementById('browser-frame');
   const urlBar    = document.getElementById('url-bar');
   const navStatus = document.getElementById('nav-status');
   const loader    = document.getElementById('loader');
+
+  // Charge la page d'accueil au démarrage
+  urlBar.value = HOME_URL;
+  navTo(HOME_URL);
 
   function navTo(url) {
     if (!url) return;
