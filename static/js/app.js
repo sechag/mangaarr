@@ -2268,8 +2268,13 @@ async function testEmule() {
   if (st) {
     st.textContent = d.message || (d.ok ? 'Connecté ✓' : 'Erreur');
     st.className   = 'status-msg ' + (d.ok ? 'ok' : 'error');
-    setTimeout(() => { st.textContent = ''; }, 3000);
   }
+  // Affiche le body de la réponse pour aider au debug
+  if (d.body_preview) {
+    const prev = document.getElementById('emule-body-preview');
+    if (prev) { prev.style.display = ''; prev.textContent = d.body_preview; }
+  }
+  setTimeout(() => { if (st) st.textContent = ''; }, 5000);
 }
 
 // ══════════════════════════════════════════════════════════

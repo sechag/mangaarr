@@ -289,21 +289,89 @@ def api_test_emule():
         return jsonify({"ok": False, "message": "URL eMule non configurée"})
     md5_pwd = hashlib.md5(pwd.encode("utf-8")).hexdigest()
     try:
-        r = _req.get(f"{url}/", params={"webgui_password": md5_pwd}, timeout=8)
-        if r.status_code == 200:
-            return jsonify({"ok": True, "message": f"Connecté ({r.status_code})"})
-        return jsonify({"ok": False, "message": f"HTTP {r.status_code}"})
+        # Récupère la page d'accueil pour identifier le type d'interface
+        r = _req.get(f"{url}/", timeout=8)
+        body_preview = r.text[:300].replace("\n", " ").replace("\r", "")
+        hint = ""
+        if "aMule" in r.text or "amule" in r.text.lower():
+            hint = "aMule détecté"
+        elif "eMule" in r.text or "emule" in r.text.lower():
+            hint = "eMule détecté"
+        return jsonify({
+            "ok": r.status_code == 200,
+            "message": f"HTTP {r.status_code} — {hint or 'interface inconnue'}",
+            "body_preview": body_preview,
+        })
     except Exception as e:
         return jsonify({"ok": False, "message": str(e)})
+
+
+def _emule_add_links(emule_url: str, emule_pwd: str, urls: list) -> dict:
+    """
+    Envoie des liens ed2k à eMule/aMule.
+    Tente plusieurs protocoles dans l'ordre :
+      1. aMule : POST login (MD5) → session cookie → GET add_link
+      2. eMule Windows : GET /?webgui_password=MD5&action=add_link&link=...
+      3. Fallback GET avec mot de passe en clair
+    """
+    import hashlib, requests as _req
+    md5_pwd = hashlib.md5(emule_pwd.encode("utf-8")).hexdigest()
+    base    = emule_url.rstrip("/")
+    sent    = 0
+    errors  = []
+
+    # ── Tentative 1 : session aMule (POST login + cookie) ──
+    try:
+        sess = _req.Session()
+        sess.headers.update({"User-Agent": "Mozilla/5.0"})
+        # Login
+        sess.post(f"{base}/", data={"webPassword": md5_pwd}, timeout=8)
+        # Ajoute chaque lien avec la session
+        for ed2k in urls:
+            r = sess.get(f"{base}/", params={"action": "add_link", "link": ed2k}, timeout=10)
+            if r.status_code < 400 and ("added" in r.text.lower() or "ed2k" not in r.text.lower()):
+                sent += 1
+            else:
+                # Fallback : passe aussi le mot de passe en paramètre (certaines versions)
+                r2 = sess.get(f"{base}/", params={
+                    "webgui_password": md5_pwd, "action": "add_link", "link": ed2k
+                }, timeout=10)
+                if r2.status_code < 400:
+                    sent += 1
+                else:
+                    errors.append(f"HTTP {r2.status_code}")
+        if sent > 0:
+            return {"ok": True, "sent": sent, "total": len(urls),
+                    "message": f"{sent}/{len(urls)} lien(s) envoyé(s) via aMule"}
+    except Exception as e:
+        errors.append(f"aMule session: {e}")
+
+    # ── Tentative 2 : GET direct avec mot de passe MD5 ──
+    try:
+        for ed2k in urls:
+            r = _req.get(f"{base}/", params={
+                "webgui_password": md5_pwd, "action": "add_link", "link": ed2k
+            }, timeout=10)
+            if r.status_code < 400:
+                sent += 1
+            else:
+                errors.append(f"HTTP {r.status_code}")
+        if sent > 0:
+            return {"ok": True, "sent": sent, "total": len(urls),
+                    "message": f"{sent}/{len(urls)} lien(s) envoyé(s)"}
+    except Exception as e:
+        errors.append(f"GET direct: {e}")
+
+    err_msg = "; ".join(errors[:2]) if errors else "Aucune méthode n'a fonctionné"
+    return {"ok": False, "sent": 0, "total": len(urls), "message": err_msg}
+
 
 @app.route("/api/ebdz-proxy/send-to-emule", methods=["POST"])
 def api_send_to_emule():
     """
     Envoie une liste de liens ed2k à l'interface web eMule/aMule.
     Body: {urls: ["ed2k://...", ...]}
-    Protocole aMule web : GET /?webgui_password=MD5&action=add_link&link=ENCODED
     """
-    import hashlib, requests as _req
     d    = request.json or {}
     urls = d.get("urls", [])
     if not urls:
@@ -312,27 +380,9 @@ def api_send_to_emule():
     emule_pwd = config.get("emule_password", "")
     if not emule_url:
         return jsonify({"ok": False, "message": "URL eMule non configurée (Settings > Download Client)"})
-    md5_pwd = hashlib.md5(emule_pwd.encode("utf-8")).hexdigest()
-    sent = 0
-    errors = []
-    for ed2k_url in urls:
-        try:
-            r = _req.get(
-                f"{emule_url}/",
-                params={"webgui_password": md5_pwd, "action": "add_link", "link": ed2k_url},
-                timeout=10,
-            )
-            if r.status_code < 400:
-                sent += 1
-            else:
-                errors.append(f"HTTP {r.status_code}")
-        except Exception as e:
-            errors.append(str(e))
-    ok = sent > 0
-    msg = f"{sent}/{len(urls)} lien(s) envoyé(s)"
-    if errors:
-        msg += f" — {errors[0]}"
-    return jsonify({"ok": ok, "sent": sent, "total": len(urls), "message": msg})
+    result = _emule_add_links(emule_url, emule_pwd, urls)
+    return jsonify(result)
+
 
 
 # ════════════════════════════════════════════════════════
