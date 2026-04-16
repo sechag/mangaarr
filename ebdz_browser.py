@@ -193,8 +193,24 @@ def fetch_and_rewrite(url: str, mybbuser: str) -> dict:
 
     # Réécrit les formulaires pour passer par le proxy
     for form in soup.find_all("form", action=True):
-        abs_action = urljoin(final_url, form["action"])
-        if abs_action.startswith(EBDZ_BASE):
+        try:
+            abs_action = urljoin(final_url, form["action"])
+        except ValueError:
+            continue
+        if not abs_action.startswith(EBDZ_BASE):
+            continue
+        method = (form.get("method") or "get").strip().lower()
+        if method == "get":
+            # Formulaire GET : le navigateur REMPLACE la query string de l'action
+            # quand il soumet → on intercepte via onsubmit et on envoie l'URL complète
+            # au parent via postMessage pour naviguer proprement via le proxy.
+            safe_action = abs_action.replace("\\", "\\\\").replace("'", "\\'")
+            form["onsubmit"] = (
+                f"var q=new URLSearchParams(new FormData(this)).toString();"
+                f"parent.postMessage({{type:'navigate',url:'{safe_action}'+(q?'?'+q:'')}},'*');"
+                f"return false;"
+            )
+        else:
             form["action"] = f"{PROXY_PATH}?url={quote(abs_action, safe=':/')}"
 
     # Injecte un script qui notifie le parent de l'URL courante

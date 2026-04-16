@@ -410,6 +410,10 @@
         <span id="sb-series-name" class="empty">Aucune série sélectionnée</span>
         <button onclick="openPickPanel()">Changer</button>
       </div>
+      <div id="sb-tomes-info" style="margin-top:6px;display:none">
+        <div id="sb-tomes-owned" style="font-size:10px;color:var(--success);margin-bottom:3px;line-height:1.4"></div>
+        <div id="sb-tomes-missing" style="font-size:10px;color:var(--warning);line-height:1.4"></div>
+      </div>
     </div>
 
     <!-- Pick/add series panel (collapsible) -->
@@ -552,6 +556,11 @@
       _history.push(e.data.url || '');
     }
 
+    // Formulaires GET interceptés (search.php, etc.)
+    if (e.data.type === 'navigate') {
+      navTo(e.data.url);
+    }
+
     if (e.data.type === 'ed2k') {
       addEd2kLink(e.data.url);
     }
@@ -568,18 +577,43 @@
   // ════════════════════════════════
   // Series selection
   // ════════════════════════════════
-  function setActiveSeries(name) {
+  function setActiveSeries(name, fromCollection = false) {
     _activeSeries = name;
     const el = document.getElementById('sb-series-name');
+    const info = document.getElementById('sb-tomes-info');
     if (name) {
       el.textContent = name;
       el.classList.remove('empty');
     } else {
       el.textContent = 'Aucune série sélectionnée';
       el.classList.add('empty');
+      info.style.display = 'none';
     }
     closePickPanel();
     updateFooter();
+    if (name && fromCollection) loadSeriesTomes(name);
+    else info.style.display = 'none';
+  }
+
+  async function loadSeriesTomes(name) {
+    const info    = document.getElementById('sb-tomes-info');
+    const elOwned = document.getElementById('sb-tomes-owned');
+    const elMiss  = document.getElementById('sb-tomes-missing');
+    elOwned.textContent = 'Chargement…';
+    elMiss.textContent  = '';
+    info.style.display  = 'block';
+    try {
+      const r = await fetch(`/api/ebdz-browser/series-tomes?name=${encodeURIComponent(name)}`).then(r => r.json());
+      if (!r.ok) { info.style.display = 'none'; return; }
+      elOwned.textContent = r.owned.length
+        ? `✓ Possédés : ${r.owned.map(n => `T${String(n).padStart(2,'0')}`).join(', ')}`
+        : '✓ Aucun tome possédé';
+      elMiss.textContent = r.missing.length
+        ? `✗ Manquants : ${r.missing.map(n => `T${String(n).padStart(2,'0')}`).join(', ')}`
+        : (r.total ? '✓ Collection complète !' : '');
+    } catch(e) {
+      info.style.display = 'none';
+    }
   }
 
   function openPickPanel() {
@@ -636,7 +670,7 @@
     items.forEach(s => {
       const li = document.createElement('li');
       li.textContent = s;
-      li.addEventListener('click', () => setActiveSeries(s));
+      li.addEventListener('click', () => setActiveSeries(s, true));
       ul.appendChild(li);
     });
   }

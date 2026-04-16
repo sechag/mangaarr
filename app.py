@@ -261,6 +261,45 @@ def api_download_clients_info():
     })
 
 
+@app.route("/api/ebdz-browser/series-tomes")
+def api_ebdz_series_tomes():
+    """
+    Cherche une série par nom dans toutes les librairies et retourne ses tomes.
+    GET /api/ebdz-browser/series-tomes?name=Dragon+Ball
+    Retourne {ok, owned: [1,2,3], missing: [4,5], total: 5, slug: "name--id"}
+    """
+    name = request.args.get("name", "").strip()
+    if not name:
+        return jsonify({"ok": False})
+    name_lower = name.lower()
+    for lib in lib_mgr.get_libraries():
+        try:
+            series_list = lib_mgr.scan_library(lib["id"])
+        except Exception:
+            continue
+        for s in series_list:
+            if s["name"].lower() == name_lower:
+                owned = sorted([
+                    t["numero"] for t in s.get("tomes", [])
+                    if t.get("numero") is not None
+                ])
+                meta  = cache_mod.get_series_meta(lib["id"], s["id"]) or {}
+                total = 0
+                try:
+                    total = int(meta.get("tomes_vf") or 0)
+                except Exception:
+                    pass
+                missing = [n for n in range(1, total + 1) if n not in owned] if total else []
+                return jsonify({
+                    "ok":      True,
+                    "name":    s["name"],
+                    "owned":   owned,
+                    "missing": missing,
+                    "total":   total,
+                    "slug":    f"{s['name']}--{s['id']}",
+                })
+    return jsonify({"ok": False, "message": "Série non trouvée dans la collection"})
+
 
 # ════════════════════════════════════════════════════════
 # TORRENT — RECHERCHE
