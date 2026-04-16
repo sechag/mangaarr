@@ -122,7 +122,10 @@ def detect_series_from_filename(filename: str) -> tuple[str | None, str | None]:
 def find_series_folder(series_name: str, root_dir: str) -> str | None:
     """
     Cherche le dossier d'une série dans root_dir.
-    Utilise le matching flou pour tolérer les variations de nom.
+    Priorité :
+      1. Exact match insensible à la casse (respecte le nom explicite de l'utilisateur)
+      2. Exact match après normalisation (accents, apostrophes…)
+      3. Matching flou ≥ 0.80 (seuil relevé pour éviter les faux positifs)
     """
     if not series_name or not os.path.isdir(root_dir):
         return None
@@ -132,6 +135,9 @@ def find_series_folder(series_name: str, root_dir: str) -> str | None:
     except Exception:
         return None
 
+    name_lower = series_name.strip().lower()
+    name_norm  = _cache._normalize(series_name)
+
     best_folder = None
     best_score  = 0.0
 
@@ -139,12 +145,24 @@ def find_series_folder(series_name: str, root_dir: str) -> str | None:
         full = os.path.join(root_dir, entry)
         if not os.path.isdir(full):
             continue
+
+        # ── Passe 1 : exact match insensible à la casse ──
+        if entry.strip().lower() == name_lower:
+            return full  # correspondance parfaite, inutile d'aller plus loin
+
+        # ── Passe 2 : exact match normalisé ──
+        if _cache._normalize(entry) == name_norm:
+            return full
+
+        # ── Passe 3 : fuzzy (fallback) ──
         score = _cache._similarity(series_name, entry)
         if score > best_score:
             best_score  = score
             best_folder = full
 
-    return best_folder if best_score >= 0.65 else None
+    # Seuil relevé à 0.80 : on préfère créer un nouveau dossier plutôt que
+    # de matcher une série différente (ex. "C'était nous" ≠ "C'était nous - Edition Double")
+    return best_folder if best_score >= 0.80 else None
 
 
 # ═══════════════════════════════════════════════════
@@ -207,31 +225,51 @@ def organize_file(item: dict | None = None, filepath: str | None = None) -> dict
     log(f"Identification : '{series_name}' T{tome_number} — {filename}")
 
     # ── Trouve le dossier de destination dans les librairies configurées ──
-    # On cherche dans TOUTES les librairies la série par matching fuzzy
+    # Priorité : exact match > fuzzy ≥ 0.80 > création d'un nouveau dossier
     dest_folder = None
     try:
-        import library_manager as _lm
+        import library_manager as _lm, cache as _cache
         libraries = _lm.get_libraries()
-        best_score  = 0.0
-        best_folder = None
-        best_lib    = None
+
+        exact_folder = None   # exact match (casse / normalisation)
+        best_score   = 0.0
+        best_folder  = None
+        best_lib     = None
+        name_lower   = series_name.strip().lower()
+        name_norm    = _cache._normalize(series_name)
 
         for lib in libraries:
             if not os.path.isdir(lib["path"]):
                 continue
+
+            # ── Exact match prioritaire dans cette librairie ──
+            for entry in os.listdir(lib["path"]):
+                full = os.path.join(lib["path"], entry)
+                if not os.path.isdir(full):
+                    continue
+                if entry.strip().lower() == name_lower or _cache._normalize(entry) == name_norm:
+                    exact_folder = full
+                    best_lib     = lib
+                    break  # trouvé, pas besoin de continuer dans cette lib
+
+            if exact_folder:
+                break  # pas besoin de chercher dans d'autres libs
+
+            # ── Fuzzy fallback ──
             found = find_series_folder(series_name, lib["path"])
             if found:
-                # find_series_folder retourne le meilleur match ≥ 0.65
-                import cache as _cache
                 score = _cache._similarity(series_name, os.path.basename(found))
                 if score > best_score:
                     best_score  = score
                     best_folder = found
                     best_lib    = lib
 
-        if best_folder:
+        if exact_folder:
+            dest_folder = exact_folder
+            log(f"Dossier trouvé (exact) dans '{best_lib['name']}' : {dest_folder}")
+        elif best_folder:
             dest_folder = best_folder
-            log(f"Dossier trouvé dans librairie '{best_lib['name']}' : {dest_folder}")
+            log(f"Dossier trouvé (fuzzy {best_score:.2f}) dans '{best_lib['name']}' : {dest_folder}")
         else:
             # Pas trouvé → crée dans la première librairie disponible
             if libraries and os.path.isdir(libraries[0]["path"]):
