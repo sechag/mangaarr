@@ -599,6 +599,51 @@ def api_ebdz_proxy():
                 f"Erreur proxy:\n{err}</pre>"), 200
 
 
+@app.route("/api/ebdz-proxy/generate-collection", methods=["POST"])
+def api_ebdz_generate_collection():
+    """
+    Reçoit une liste de liens ed2k avec numéros de tome corrigés,
+    les ajoute à la queue et génère un .emulecollection pour la série.
+    """
+    d           = request.json or {}
+    series_name = d.get("series_name", "").strip()
+    items_in    = d.get("items", [])   # [{url, tome_number}]
+
+    if not series_name:
+        return jsonify({"ok": False, "message": "Nom de série requis"})
+    if not items_in:
+        return jsonify({"ok": False, "message": "Aucun lien fourni"})
+
+    items = []
+    for it in items_in:
+        parsed = ebdz_scraper.parse_ed2k(it.get("url", ""))
+        if not parsed:
+            continue
+        items.append({
+            "filename":    parsed["filename"],
+            "filesize":    parsed["filesize"],
+            "filehash":    parsed["filehash"],
+            "url":         parsed["url"],
+            "tome_number": it.get("tome_number") or parsed.get("tome_number", ""),
+            "tag":         parsed.get("tag", ""),
+            "series_name": series_name,
+            "action":      "missing",
+        })
+
+    if not items:
+        return jsonify({"ok": False, "message": "Aucun lien ed2k valide"})
+
+    r  = queue_manager.add_to_queue(items)
+    series_label = re.sub(r"[^A-Za-z0-9_\-]", ".", series_name.replace(" ", "."))
+    fp = queue_manager.generate_emulecollection(items, series_prefix=series_label)
+    return jsonify({
+        "ok":      True,
+        "added":   r["added"],
+        "skipped": r["skipped"],
+        "file":    os.path.basename(fp) if fp else None,
+    })
+
+
 @app.route("/api/ebdz-proxy/add-ed2k", methods=["POST"])
 def api_ebdz_add_ed2k():
     """Ajoute un lien ed2k intercepté depuis le navigateur ebdz à la queue."""

@@ -17,6 +17,7 @@
       --danger:    #ef4444;
       --text:      #e2e8f0;
       --text-dim:  #64748b;
+      --sidebar-w: 300px;
     }
 
     body {
@@ -38,6 +39,7 @@
       background: var(--bg-sidebar);
       border-bottom: 1px solid var(--border);
       flex-shrink: 0;
+      z-index: 100;
     }
 
     #toolbar a.back-home {
@@ -63,6 +65,7 @@
     }
     .tb-btn:hover { border-color: var(--accent); }
     .tb-btn:disabled { opacity: .4; cursor: default; }
+    .tb-btn.active { border-color: var(--accent); color: var(--accent); }
 
     #url-bar {
       flex: 1;
@@ -73,6 +76,7 @@
       padding: 5px 10px;
       font-size: 12px;
       font-family: monospace;
+      min-width: 0;
     }
     #url-bar:focus { outline: none; border-color: var(--accent); }
 
@@ -80,6 +84,271 @@
       font-size: 11px;
       color: var(--text-dim);
       white-space: nowrap;
+    }
+
+    /* ── Main area (sidebar + iframe) ── */
+    #main-area {
+      flex: 1;
+      display: flex;
+      overflow: hidden;
+      position: relative;
+    }
+
+    /* ── Left sidebar ── */
+    #left-sidebar {
+      width: var(--sidebar-w);
+      background: var(--bg-sidebar);
+      border-right: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      flex-shrink: 0;
+      transition: width .2s ease, opacity .2s ease;
+    }
+    #left-sidebar.collapsed {
+      width: 0;
+      opacity: 0;
+      pointer-events: none;
+    }
+
+    .sb-section {
+      border-bottom: 1px solid var(--border);
+      padding: 10px 12px;
+    }
+    .sb-label {
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: .08em;
+      color: var(--text-dim);
+      text-transform: uppercase;
+      margin-bottom: 8px;
+    }
+
+    /* Active series */
+    #sb-series-name {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      flex: 1;
+    }
+    #sb-series-name.empty { color: var(--text-dim); font-weight: 400; }
+    .sb-series-row {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .sb-series-row button {
+      background: none;
+      border: 1px solid var(--border);
+      border-radius: 5px;
+      color: var(--text-dim);
+      cursor: pointer;
+      font-size: 11px;
+      padding: 2px 7px;
+      white-space: nowrap;
+    }
+    .sb-series-row button:hover { border-color: var(--accent); color: var(--accent); }
+
+    /* Search / add series panel */
+    #sb-pick-panel {
+      flex: 1;
+      overflow-y: auto;
+      padding: 10px 12px;
+      display: none;
+      flex-direction: column;
+      gap: 8px;
+    }
+    #sb-pick-panel.open { display: flex; }
+
+    .sp-tabs {
+      display: flex;
+      gap: 4px;
+      margin-bottom: 4px;
+    }
+    .sp-tab {
+      flex: 1;
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 5px;
+      color: var(--text-dim);
+      cursor: pointer;
+      font-size: 11px;
+      padding: 4px 6px;
+      text-align: center;
+    }
+    .sp-tab.active { border-color: var(--accent); color: var(--accent); }
+
+    .sp-pane { display: none; flex-direction: column; gap: 6px; }
+    .sp-pane.active { display: flex; }
+
+    .sb-input {
+      width: 100%;
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      color: var(--text);
+      padding: 6px 9px;
+      font-size: 12px;
+    }
+    .sb-input:focus { outline: none; border-color: var(--accent); }
+
+    .sb-result-list {
+      list-style: none;
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+      max-height: 180px;
+      overflow-y: auto;
+    }
+    .sb-result-list li {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 5px;
+      padding: 5px 9px;
+      font-size: 12px;
+      cursor: pointer;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .sb-result-list li:hover { border-color: var(--accent); color: var(--accent); }
+
+    .sb-btn-add {
+      background: var(--accent);
+      color: #fff;
+      border: none;
+      border-radius: 6px;
+      padding: 6px 10px;
+      cursor: pointer;
+      font-size: 12px;
+      font-weight: 600;
+      width: 100%;
+    }
+    .sb-btn-add:hover { opacity: .9; }
+    .sb-btn-add:disabled { opacity: .4; cursor: default; }
+
+    .sb-note { font-size: 11px; color: var(--text-dim); }
+
+    /* ed2k links list */
+    #sb-links-area {
+      flex: 1;
+      overflow-y: auto;
+      padding: 8px 10px;
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+    }
+
+    .ed2k-row {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 6px 8px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .ed2k-row-name {
+      flex: 1;
+      font-size: 11px;
+      color: var(--text);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      min-width: 0;
+    }
+    .ed2k-tome-input {
+      width: 46px;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      color: var(--text);
+      padding: 3px 5px;
+      font-size: 11px;
+      text-align: center;
+      flex-shrink: 0;
+    }
+    .ed2k-tome-input:focus { outline: none; border-color: var(--accent); }
+    .ed2k-del {
+      background: none;
+      border: none;
+      color: var(--text-dim);
+      cursor: pointer;
+      font-size: 14px;
+      line-height: 1;
+      padding: 0 2px;
+      flex-shrink: 0;
+    }
+    .ed2k-del:hover { color: var(--danger); }
+
+    #sb-empty-links {
+      font-size: 12px;
+      color: var(--text-dim);
+      text-align: center;
+      padding: 20px 0;
+    }
+
+    /* Generate footer */
+    #sb-footer {
+      padding: 10px 12px;
+      border-top: 1px solid var(--border);
+      flex-shrink: 0;
+    }
+    #sb-footer-info {
+      font-size: 11px;
+      color: var(--text-dim);
+      margin-bottom: 6px;
+    }
+    #btn-generate {
+      width: 100%;
+      background: var(--success);
+      color: #fff;
+      border: none;
+      border-radius: 6px;
+      padding: 8px;
+      cursor: pointer;
+      font-size: 13px;
+      font-weight: 600;
+    }
+    #btn-generate:hover { opacity: .9; }
+    #btn-generate:disabled { opacity: .4; cursor: default; }
+    #btn-clear-links {
+      width: 100%;
+      background: none;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      color: var(--text-dim);
+      cursor: pointer;
+      font-size: 11px;
+      padding: 5px;
+      margin-top: 5px;
+    }
+    #btn-clear-links:hover { border-color: var(--danger); color: var(--danger); }
+
+    /* ── Iframe area ── */
+    #frame-area {
+      flex: 1;
+      position: relative;
+      overflow: hidden;
+    }
+    #browser-frame {
+      width: 100%;
+      height: 100%;
+      border: none;
+      background: #fff;
+    }
+    #loader {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      pointer-events: none;
+      font-size: 13px;
+      color: var(--text-dim);
     }
 
     /* ── Toast queue ── */
@@ -105,63 +374,13 @@
     }
     .toast-item.ok   { border-left: 3px solid var(--success); }
     .toast-item.err  { border-left: 3px solid var(--danger);  }
+    .toast-item.warn { border-left: 3px solid var(--warning);  }
     @keyframes fadeIn { from { opacity:0; transform:translateY(8px); } to { opacity:1; } }
 
-    /* ── Panel série (sélection rapide) ── */
-    #series-panel {
-      display: none;
-      position: fixed;
-      inset: 0;
-      background: rgba(0,0,0,.75);
-      z-index: 8000;
-      align-items: center;
-      justify-content: center;
-    }
-    #series-panel.open { display: flex; }
-    #series-panel-inner {
-      background: var(--bg-card);
-      border: 1px solid var(--border);
-      border-radius: 12px;
-      padding: 20px;
-      width: 400px;
-      max-width: 95vw;
-    }
-    #series-panel-inner h3 { font-size: 14px; margin-bottom: 12px; }
-    #series-panel-inner input {
-      width: 100%;
-      background: var(--bg);
-      border: 1px solid var(--border);
-      border-radius: 6px;
-      color: var(--text);
-      padding: 7px 10px;
-      font-size: 13px;
-      margin-bottom: 10px;
-    }
-    #series-panel-inner input:focus { outline: none; border-color: var(--accent); }
-    .sp-actions { display: flex; gap: 8px; justify-content: flex-end; }
-    .btn-acc { background: var(--accent); color: #fff; border: none; border-radius: 6px; padding: 7px 16px; cursor: pointer; font-size: 13px; font-weight: 600; }
-    .btn-can { background: none; border: 1px solid var(--border); border-radius: 6px; color: var(--text); padding: 7px 16px; cursor: pointer; font-size: 13px; }
-    .sp-file  { font-size: 11px; color: var(--text-dim); margin-bottom: 8px; word-break: break-all; }
-
-    /* ── Iframe ── */
-    #browser-frame {
-      flex: 1;
-      border: none;
-      width: 100%;
-      background: #fff;
-    }
-
-    #loader {
-      position: absolute;
-      top: 50px;
-      left: 0; right: 0;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      pointer-events: none;
-      font-size: 13px;
-      color: var(--text-dim);
-    }
+    /* scrollbar */
+    ::-webkit-scrollbar { width: 5px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
   </style>
 </head>
 <body>
@@ -170,52 +389,116 @@
 <div id="toolbar">
   <a class="back-home" href="/">← MangaArr</a>
   <button class="tb-btn" onclick="navBack()">‹</button>
-  <button class="tb-btn" id="btn-home" onclick="navTo(HOME_URL)">⌂</button>
+  <button class="tb-btn" onclick="navTo(HOME_URL)">⌂</button>
   <input id="url-bar" type="text" placeholder="URL ebdz.net…"
          onkeydown="if(event.key==='Enter') navTo(this.value.trim())">
   <button class="tb-btn" onclick="navTo(document.getElementById('url-bar').value.trim())">Go</button>
+  <button class="tb-btn" id="btn-toggle-sidebar" onclick="toggleSidebar()" title="Panneau série">☰</button>
   <span id="nav-status"></span>
 </div>
 
-<!-- Iframe -->
-<iframe id="browser-frame"
-        src=""
-        onload="onFrameLoad()"
-        sandbox="allow-forms allow-same-origin allow-scripts">
-</iframe>
-<div id="loader">Chargement…</div>
+<!-- Main area -->
+<div id="main-area">
 
-<!-- Toasts ed2k -->
+  <!-- Left sidebar -->
+  <div id="left-sidebar">
+
+    <!-- Active series -->
+    <div class="sb-section">
+      <div class="sb-label">Série active</div>
+      <div class="sb-series-row">
+        <span id="sb-series-name" class="empty">Aucune série sélectionnée</span>
+        <button onclick="openPickPanel()">Changer</button>
+      </div>
+    </div>
+
+    <!-- Pick/add series panel (collapsible) -->
+    <div id="sb-pick-panel">
+      <div class="sp-tabs">
+        <button class="sp-tab active" onclick="switchTab('collection')">Collection</button>
+        <button class="sp-tab" onclick="switchTab('mangadb')">MangaDB</button>
+        <button class="sp-tab" onclick="switchTab('manual')">Manuel</button>
+      </div>
+
+      <!-- Tab: Collection -->
+      <div class="sp-pane active" id="tab-collection">
+        <input class="sb-input" id="col-search" type="text" placeholder="Rechercher…"
+               oninput="searchCollection(this.value)">
+        <ul class="sb-result-list" id="col-results"></ul>
+      </div>
+
+      <!-- Tab: MangaDB -->
+      <div class="sp-pane" id="tab-mangadb">
+        <input class="sb-input" id="mdb-search" type="text" placeholder="Titre manga…"
+               oninput="searchMangaDB(this.value)">
+        <ul class="sb-result-list" id="mdb-results"></ul>
+        <div class="sb-note" id="mdb-note"></div>
+      </div>
+
+      <!-- Tab: Manuel -->
+      <div class="sp-pane" id="tab-manual">
+        <input class="sb-input" id="manual-name" type="text" placeholder="Nom de la série">
+        <button class="sb-btn-add" onclick="selectManual()">Utiliser ce nom</button>
+      </div>
+    </div>
+
+    <!-- ed2k links list -->
+    <div class="sb-section" style="border-bottom:none; padding-bottom:4px;">
+      <div class="sb-label">Liens collectés <span id="sb-count" style="color:var(--accent)"></span></div>
+    </div>
+    <div id="sb-links-area">
+      <div id="sb-empty-links">Cliquez sur un lien ed2k dans le navigateur pour l'ajouter ici</div>
+    </div>
+
+    <!-- Footer generate -->
+    <div id="sb-footer">
+      <div id="sb-footer-info"></div>
+      <button id="btn-generate" onclick="generateCollection()" disabled>
+        Générer .emulecollection
+      </button>
+      <button id="btn-clear-links" onclick="clearLinks()">Vider la liste</button>
+    </div>
+
+  </div><!-- /left-sidebar -->
+
+  <!-- Browser frame -->
+  <div id="frame-area">
+    <iframe id="browser-frame" src=""
+            onload="onFrameLoad()"
+            sandbox="allow-forms allow-same-origin allow-scripts">
+    </iframe>
+    <div id="loader">Chargement…</div>
+  </div>
+
+</div><!-- /main-area -->
+
+<!-- Toasts -->
 <div id="ed2k-toast"></div>
 
-<!-- Panel sélection série -->
-<div id="series-panel">
-  <div id="series-panel-inner">
-    <h3>Ajouter à la queue</h3>
-    <div class="sp-file" id="sp-filename"></div>
-    <input id="sp-series" type="text" placeholder="Nom de la série (optionnel)">
-    <div class="sp-actions">
-      <button class="btn-can" onclick="closeSeriesPanel()">Annuler</button>
-      <button class="btn-acc" onclick="confirmAddEd2k()">Ajouter ✓</button>
-    </div>
-  </div>
-</div>
-
 <script>
-  const HOME_URL  = {{ home_url | tojson }};
+  const HOME_URL = {{ home_url | tojson }};
 
+  // ── state ──
   let _history    = [];
-  let _pendingEd2k = null;
+  let _ed2kLinks  = [];   // [{url, filename, tome_number}]
+  let _activeSeries = null;
 
+  // ── DOM refs ──
   const frame     = document.getElementById('browser-frame');
   const urlBar    = document.getElementById('url-bar');
   const navStatus = document.getElementById('nav-status');
   const loader    = document.getElementById('loader');
+  const sidebar   = document.getElementById('left-sidebar');
+  const pickPanel = document.getElementById('sb-pick-panel');
 
-  // Charge la page d'accueil au démarrage
+  // ── Init ──
   urlBar.value = HOME_URL;
   navTo(HOME_URL);
+  loadCollectionList();
 
+  // ════════════════════════════════
+  // Navigation
+  // ════════════════════════════════
   function navTo(url) {
     if (!url) return;
     loader.style.display = 'flex';
@@ -235,76 +518,295 @@
     loader.style.display = 'none';
   }
 
-  // Écoute les messages de l'iframe
-  window.addEventListener('message', async (e) => {
+  // ── postMessage from iframe ──
+  window.addEventListener('message', (e) => {
     if (!e.data || typeof e.data !== 'object') return;
 
     if (e.data.type === 'nav') {
-      const url = e.data.url || '';
-      urlBar.value = url;
-      _history.push(url);
-      navStatus.textContent = '';
+      urlBar.value = e.data.url || '';
+      _history.push(e.data.url || '');
     }
 
     if (e.data.type === 'ed2k') {
-      _pendingEd2k = e.data.url;
-      // Extrait le nom de fichier du lien ed2k pour pré-remplir
-      const m = e.data.url.match(/\|file\|([^|]+)\|/);
-      const filename = m ? decodeURIComponent(m[1]) : e.data.url;
-      document.getElementById('sp-filename').textContent = filename;
-      document.getElementById('sp-series').value = '';
-      document.getElementById('series-panel').classList.add('open');
-      document.getElementById('sp-series').focus();
+      addEd2kLink(e.data.url);
     }
   });
 
-  async function confirmAddEd2k() {
-    if (!_pendingEd2k) return;
-    const seriesName = document.getElementById('sp-series').value.trim();
-    closeSeriesPanel();
+  // ════════════════════════════════
+  // Sidebar toggle
+  // ════════════════════════════════
+  function toggleSidebar() {
+    sidebar.classList.toggle('collapsed');
+    document.getElementById('btn-toggle-sidebar').classList.toggle('active');
+  }
 
-    navStatus.textContent = 'Ajout en cours…';
+  // ════════════════════════════════
+  // Series selection
+  // ════════════════════════════════
+  function setActiveSeries(name) {
+    _activeSeries = name;
+    const el = document.getElementById('sb-series-name');
+    if (name) {
+      el.textContent = name;
+      el.classList.remove('empty');
+    } else {
+      el.textContent = 'Aucune série sélectionnée';
+      el.classList.add('empty');
+    }
+    closePickPanel();
+    updateFooter();
+  }
+
+  function openPickPanel() {
+    pickPanel.classList.add('open');
+  }
+
+  function closePickPanel() {
+    pickPanel.classList.remove('open');
+  }
+
+  // ── Tabs ──
+  function switchTab(name) {
+    document.querySelectorAll('.sp-tab').forEach((t, i) => {
+      const names = ['collection','mangadb','manual'];
+      t.classList.toggle('active', names[i] === name);
+    });
+    document.querySelectorAll('.sp-pane').forEach(p => p.classList.remove('active'));
+    document.getElementById('tab-' + name).classList.add('active');
+    if (name === 'collection') document.getElementById('col-search').focus();
+    if (name === 'mangadb')    document.getElementById('mdb-search').focus();
+    if (name === 'manual')     document.getElementById('manual-name').focus();
+  }
+
+  // ── Tab Collection ──
+  let _allSeries = [];
+  async function loadCollectionList() {
     try {
-      const r = await fetch('/api/ebdz-proxy/add-ed2k', {
+      const r = await fetch('/api/queue/series-on-disk').then(r => r.json());
+      _allSeries = [];
+      if (r.ok && r.libraries) {
+        r.libraries.forEach(lib => {
+          (lib.series || []).forEach(s => _allSeries.push(s));
+        });
+      }
+      renderCollectionResults(_allSeries.slice(0, 40));
+    } catch(e) {}
+  }
+
+  function searchCollection(q) {
+    const term = q.toLowerCase();
+    const filtered = term
+      ? _allSeries.filter(s => s.toLowerCase().includes(term))
+      : _allSeries;
+    renderCollectionResults(filtered.slice(0, 40));
+  }
+
+  function renderCollectionResults(items) {
+    const ul = document.getElementById('col-results');
+    ul.innerHTML = items.length
+      ? items.map(s => `<li onclick="setActiveSeries(${JSON.stringify(s)})">${esc(s)}</li>`).join('')
+      : '<li style="color:var(--text-dim);cursor:default">Aucun résultat</li>';
+  }
+
+  // ── Tab MangaDB ──
+  let _mdbTimer = null;
+  function searchMangaDB(q) {
+    clearTimeout(_mdbTimer);
+    if (q.length < 2) { document.getElementById('mdb-results').innerHTML = ''; return; }
+    _mdbTimer = setTimeout(async () => {
+      document.getElementById('mdb-note').textContent = 'Recherche…';
+      try {
+        const r = await fetch(`/api/collection/add-search?q=${encodeURIComponent(q)}`).then(r => r.json());
+        const items = r.results || [];
+        document.getElementById('mdb-note').textContent = '';
+        const ul = document.getElementById('mdb-results');
+        ul.innerHTML = items.length
+          ? items.map(it => `<li onclick="selectMangaDB(${JSON.stringify(it.titre || it.title || it.name || String(it))})">${esc(it.titre || it.title || it.name || String(it))}</li>`).join('')
+          : '<li style="color:var(--text-dim);cursor:default">Aucun résultat</li>';
+      } catch(e) {
+        document.getElementById('mdb-note').textContent = 'Erreur recherche';
+      }
+    }, 350);
+  }
+
+  function selectMangaDB(title) {
+    setActiveSeries(title);
+  }
+
+  // ── Tab Manuel ──
+  function selectManual() {
+    const name = document.getElementById('manual-name').value.trim();
+    if (!name) return;
+    setActiveSeries(name);
+    document.getElementById('manual-name').value = '';
+  }
+  document.getElementById('manual-name').addEventListener('keydown', e => {
+    if (e.key === 'Enter') selectManual();
+  });
+
+  // ════════════════════════════════
+  // ed2k links management
+  // ════════════════════════════════
+  function addEd2kLink(url) {
+    // avoid duplicates
+    if (_ed2kLinks.find(l => l.url === url)) {
+      showToast('Lien déjà dans la liste', 'warn');
+      return;
+    }
+    const m = url.match(/\|file\|([^|]+)\|/);
+    const filename = m ? decodeURIComponent(m[1]) : url;
+    const tome = detectTome(filename);
+    _ed2kLinks.push({ url, filename, tome_number: tome });
+    renderLinks();
+    updateFooter();
+    // Open sidebar if collapsed
+    if (sidebar.classList.contains('collapsed')) toggleSidebar();
+    showToast(`Ajouté : ${filename}`, 'ok');
+  }
+
+  function detectTome(filename) {
+    // tries to find tome number in filename e.g. T01, Tome 1, Vol.3, #12, - 05 -
+    const patterns = [
+      /[Tt]ome?\s*(\d+)/,
+      /[Vv]ol(?:ume)?\.?\s*(\d+)/,
+      /[Tt](\d{2,3})\b/,
+      /#\s*(\d+)/,
+      /[-_\s](\d{2,3})[-_\s]/,
+    ];
+    for (const re of patterns) {
+      const m = filename.match(re);
+      if (m) return m[1].replace(/^0+/, '') || m[1];
+    }
+    return '';
+  }
+
+  function removeLink(idx) {
+    _ed2kLinks.splice(idx, 1);
+    renderLinks();
+    updateFooter();
+  }
+
+  function clearLinks() {
+    if (_ed2kLinks.length === 0) return;
+    if (!confirm('Vider toute la liste ?')) return;
+    _ed2kLinks = [];
+    renderLinks();
+    updateFooter();
+  }
+
+  function renderLinks() {
+    const area = document.getElementById('sb-links-area');
+    const empty = document.getElementById('sb-empty-links');
+    document.getElementById('sb-count').textContent =
+      _ed2kLinks.length ? `(${_ed2kLinks.length})` : '';
+
+    if (_ed2kLinks.length === 0) {
+      empty.style.display = 'block';
+      // remove all rows
+      area.querySelectorAll('.ed2k-row').forEach(el => el.remove());
+      return;
+    }
+    empty.style.display = 'none';
+
+    // rebuild rows
+    area.querySelectorAll('.ed2k-row').forEach(el => el.remove());
+    _ed2kLinks.forEach((link, i) => {
+      const row = document.createElement('div');
+      row.className = 'ed2k-row';
+      row.dataset.idx = i;
+      row.innerHTML = `
+        <span class="ed2k-row-name" title="${esc(link.filename)}">${esc(link.filename)}</span>
+        <input class="ed2k-tome-input" type="text" value="${esc(link.tome_number)}"
+               placeholder="T?" title="Numéro de tome"
+               oninput="_ed2kLinks[${i}].tome_number=this.value">
+        <button class="ed2k-del" onclick="removeLink(${i})" title="Supprimer">×</button>
+      `;
+      area.appendChild(row);
+    });
+  }
+
+  function updateFooter() {
+    const info = document.getElementById('sb-footer-info');
+    const btn  = document.getElementById('btn-generate');
+    const count = _ed2kLinks.length;
+    const hasSeries = !!_activeSeries;
+    if (!hasSeries && count > 0) {
+      info.textContent = 'Sélectionnez une série';
+      info.style.color = 'var(--warning)';
+    } else if (count > 0) {
+      info.textContent = `${count} lien${count>1?'s':''} · ${_activeSeries}`;
+      info.style.color = 'var(--text-dim)';
+    } else {
+      info.textContent = '';
+    }
+    btn.disabled = !(hasSeries && count > 0);
+  }
+
+  // ════════════════════════════════
+  // Generate .emulecollection
+  // ════════════════════════════════
+  async function generateCollection() {
+    if (!_activeSeries || _ed2kLinks.length === 0) return;
+    const btn = document.getElementById('btn-generate');
+    btn.disabled = true;
+    navStatus.textContent = 'Génération…';
+
+    const items = _ed2kLinks.map(l => ({
+      url: l.url,
+      tome_number: l.tome_number,
+    }));
+
+    try {
+      const r = await fetch('/api/ebdz-proxy/generate-collection', {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({url: _pendingEd2k, series_name: seriesName}),
+        body: JSON.stringify({ series_name: _activeSeries, items }),
       }).then(r => r.json());
 
-      showToast(
-        r.ok ? `✓ ${r.filename || 'Ajouté'}` : `✗ ${r.message || 'Erreur'}`,
-        r.ok ? 'ok' : 'err'
-      );
-      navStatus.textContent = r.ok ? `✓ Ajouté` : `✗ Erreur`;
-      setTimeout(() => { navStatus.textContent = ''; }, 3000);
+      if (r.ok) {
+        showToast(`✓ Fichier : ${r.file || 'généré'} — ${r.added||0} ajoutés`, 'ok');
+        navStatus.textContent = '✓ Collection générée';
+        // offer download
+        if (r.file) {
+          const a = document.createElement('a');
+          a.href = `/api/queue/collections/${encodeURIComponent(r.file)}`;
+          a.download = r.file;
+          a.click();
+        }
+        // clear list after success
+        _ed2kLinks = [];
+        renderLinks();
+      } else {
+        showToast(`✗ ${r.message || 'Erreur'}`, 'err');
+        navStatus.textContent = '✗ Erreur';
+      }
     } catch(err) {
       showToast('Erreur réseau', 'err');
     }
-    _pendingEd2k = null;
+
+    btn.disabled = false;
+    setTimeout(() => { navStatus.textContent = ''; }, 3000);
+    updateFooter();
   }
 
-  function closeSeriesPanel() {
-    document.getElementById('series-panel').classList.remove('open');
-    _pendingEd2k = null;
-  }
-
-  // Ferme le panel si on clique en dehors
-  document.getElementById('series-panel').addEventListener('click', e => {
-    if (e.target === document.getElementById('series-panel')) closeSeriesPanel();
-  });
-
-  // Valide avec Entrée dans le champ série
-  document.getElementById('sp-series').addEventListener('keydown', e => {
-    if (e.key === 'Enter') confirmAddEd2k();
-    if (e.key === 'Escape') closeSeriesPanel();
-  });
-
+  // ════════════════════════════════
+  // Helpers
+  // ════════════════════════════════
   function showToast(msg, type='ok') {
     const el = document.createElement('div');
     el.className = `toast-item ${type}`;
     el.textContent = msg;
     document.getElementById('ed2k-toast').appendChild(el);
     setTimeout(() => el.remove(), 4000);
+  }
+
+  function esc(s) {
+    return String(s)
+      .replace(/&/g,'&amp;')
+      .replace(/</g,'&lt;')
+      .replace(/>/g,'&gt;')
+      .replace(/"/g,'&quot;')
+      .replace(/'/g,'&#39;');
   }
 </script>
 </body>
