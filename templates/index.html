@@ -300,27 +300,6 @@
       </div>
     </div>
 
-    <div class="settings-card">
-      <h2>eMule / aMule — Interface web</h2>
-      <p class="hint">Permet d'envoyer des liens ed2k directement à eMule depuis le navigateur eBDZ.<br>
-        Protocole : <code>GET /?webgui_password=MD5(password)&amp;action=add_link&amp;link=ed2k://…</code></p>
-      <div class="form-row">
-        <label>URL (avec port)</label>
-        <input type="text" id="emule-url" class="text-input" placeholder="http://192.168.1.100:4711">
-      </div>
-      <div class="form-row">
-        <label>Mot de passe web</label>
-        <input type="password" id="emule-password" class="text-input" placeholder="Mot de passe interface web eMule">
-      </div>
-      <div class="form-actions">
-        <button class="btn btn-primary" onclick="saveEmuleSettings()">Enregistrer</button>
-        <button class="btn btn-secondary" onclick="testEmule()">Tester la connexion</button>
-        <span id="emule-status" class="status-msg"></span>
-      </div>
-      <pre id="emule-body-preview" style="display:none;margin-top:8px;padding:8px;
-           background:var(--bg-input);border-radius:6px;font-size:10px;
-           color:var(--text-dim);white-space:pre-wrap;word-break:break-all;max-height:120px;overflow:auto"></pre>
-    </div>
   </div>
 
   <!-- ══ LIBRAIRIES ══ -->

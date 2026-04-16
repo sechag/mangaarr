@@ -481,13 +481,6 @@
       <button id="btn-generate" onclick="generateCollection()" disabled>
         Générer .emulecollection
       </button>
-      <button id="btn-send-emule" onclick="sendToEmule()" disabled style="
-        width:100%; margin-top:5px;
-        background:#1a2e1a; border:1px solid #22c55e44;
-        border-radius:6px; color:#22c55e; cursor:pointer;
-        font-size:13px; font-weight:600; padding:8px;">
-        Envoyer à eMule
-      </button>
       <button id="btn-clear-links" onclick="clearLinks()">Vider la liste</button>
     </div>
 
@@ -826,13 +819,12 @@
   }
 
   function updateFooter() {
-    const info       = document.getElementById('sb-footer-info');
-    const btnGen     = document.getElementById('btn-generate');
-    const btnEmule   = document.getElementById('btn-send-emule');
-    const count      = _ed2kLinks.length;
-    const hasSeries  = !!_activeSeries;
+    const info      = document.getElementById('sb-footer-info');
+    const btnGen    = document.getElementById('btn-generate');
+    const count     = _ed2kLinks.length;
+    const hasSeries = !!_activeSeries;
     if (!hasSeries && count > 0) {
-      info.textContent = 'Sélectionnez une série pour .emulecollection';
+      info.textContent = 'Sélectionnez une série';
       info.style.color = 'var(--warning)';
     } else if (count > 0) {
       info.textContent = `${count} lien${count>1?'s':''} · ${_activeSeries}`;
@@ -840,8 +832,7 @@
     } else {
       info.textContent = '';
     }
-    btnGen.disabled   = !(hasSeries && count > 0);
-    btnEmule.disabled = count === 0;
+    btnGen.disabled = !(hasSeries && count > 0);
   }
 
   // ── Collage manuel ──
@@ -876,35 +867,6 @@
     } else {
       showToast('Aucun lien ed2k valide trouvé', 'warn');
     }
-  }
-
-  // ── Envoyer à eMule ──
-  async function sendToEmule() {
-    if (_ed2kLinks.length === 0) return;
-    const btn = document.getElementById('btn-send-emule');
-    btn.disabled = true;
-    btn.textContent = 'Envoi…';
-    navStatus.textContent = 'Envoi à eMule…';
-    try {
-      const urls = _ed2kLinks.map(l => l.url);
-      const r = await fetch('/api/ebdz-proxy/send-to-emule', {
-        method: 'POST',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({ urls }),
-      }).then(r => r.json());
-      showToast(r.message || (r.ok ? '✓ Envoyé' : '✗ Erreur'), r.ok ? 'ok' : 'err');
-      navStatus.textContent = r.ok ? `✓ ${r.sent}/${r.total} envoyé(s)` : '✗ Erreur eMule';
-      if (r.ok) {
-        _ed2kLinks = [];
-        renderLinks();
-      }
-    } catch(e) {
-      showToast('Erreur réseau', 'err');
-    }
-    btn.textContent = 'Envoyer à eMule';
-    btn.disabled = false;
-    setTimeout(() => { navStatus.textContent = ''; }, 3000);
-    updateFooter();
   }
 
   // ════════════════════════════════

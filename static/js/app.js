@@ -21,7 +21,7 @@ function navigate(page) {
     'collection-local':          loadCollection,
     'activity-logs':             loadLogs,
     'indexers':                  loadIndexerConfig,
-    'settings-download-client':  () => { loadDownloadClients(); loadEmuleSettings(); },
+    'settings-download-client':  loadDownloadClients,
     'settings-libraries':        loadLibraries,
     'settings-media':            loadMediaSettings,
     'settings-profiles':         loadProfiles,
@@ -2238,44 +2238,6 @@ async function testDownloadClient(id, btn) {
   showToast(d.message || (d.ok ? 'OK' : 'Erreur'), d.ok ? 'ok' : 'error');
 }
 
-async function loadEmuleSettings() {
-  const d = await api('/settings/emule');
-  const urlEl = document.getElementById('emule-url');
-  const pwEl  = document.getElementById('emule-password');
-  if (urlEl) urlEl.value = d.emule_url || '';
-  if (pwEl)  pwEl.placeholder = d.emule_password_set ? '(mot de passe enregistré)' : 'Mot de passe interface web eMule';
-}
-
-async function saveEmuleSettings() {
-  const url = (document.getElementById('emule-url')      || {}).value?.trim();
-  const pwd = (document.getElementById('emule-password') || {}).value;
-  const st  = document.getElementById('emule-status');
-  if (st) { st.textContent = 'Enregistrement…'; st.className = 'status-msg'; }
-  const body = { emule_url: url };
-  if (pwd) body.emule_password = pwd;
-  const d = await api('/settings/emule', 'POST', body);
-  if (st) {
-    st.textContent = d.ok ? 'Enregistré ✓' : (d.message || 'Erreur');
-    st.className   = 'status-msg ' + (d.ok ? 'ok' : 'error');
-    setTimeout(() => { st.textContent = ''; }, 2500);
-  }
-}
-
-async function testEmule() {
-  const st = document.getElementById('emule-status');
-  if (st) { st.textContent = 'Test…'; st.className = 'status-msg'; }
-  const d = await api('/settings/emule/test', 'POST', {});
-  if (st) {
-    st.textContent = d.message || (d.ok ? 'Connecté ✓' : 'Erreur');
-    st.className   = 'status-msg ' + (d.ok ? 'ok' : 'error');
-  }
-  // Affiche le body de la réponse pour aider au debug
-  if (d.body_preview) {
-    const prev = document.getElementById('emule-body-preview');
-    if (prev) { prev.style.display = ''; prev.textContent = d.body_preview; }
-  }
-  setTimeout(() => { if (st) st.textContent = ''; }, 5000);
-}
 
 // ══════════════════════════════════════════════════════════
 // PAGE: QUEUE — ONGLETS eMule / Torrent / Surveillance
