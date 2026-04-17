@@ -39,14 +39,8 @@ jobs:
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           tags: |
-            # latest sur chaque push main
             type=raw,value=latest,enable={{is_default_branch}}
-            # tag semver complet  ex: v1.2.3
             type=semver,pattern={{version}}
-            # tag majeur+mineur   ex: v1.2
-            type=semver,pattern={{major}}.{{minor}}
-            # tag majeur seul     ex: v1
-            type=semver,pattern={{major}}
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
