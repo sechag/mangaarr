@@ -160,7 +160,7 @@ def find_series_folder(series_name: str, root_dir: str) -> str | None:
             best_score  = score
             best_folder = full
 
-    return best_folder if best_score >= 0.65 else None
+    return best_folder if best_score >= 0.85 else None
 
 
 # ═══════════════════════════════════════════════════

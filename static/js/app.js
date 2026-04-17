@@ -984,8 +984,9 @@ async function _loadQueueLibrarySelect() {
   sel.innerHTML = html;
 }
 
-let _allQueueItems  = [];     // Cache complet pour filtre/tri/pagination locale
-let _queueSortDir   = 'asc'; // 'asc' | 'desc'
+let _allQueueItems    = [];     // Cache complet pour filtre/tri/pagination locale
+let _queueSortDir     = 'asc'; // 'asc' | 'desc'
+let _upgradeSortDir   = 'asc'; // tri indépendant pour la section Upgrades
 let _upgradeQueuePage = 1;
 
 async function refreshQueue(page = 1) {
@@ -1009,16 +1010,17 @@ function filterQueueTable() {
     );
   }
 
-  // Tri alphabétique par série
-  items.sort((a, b) => {
+  // Sépare les ajouts et les upgrades avec tri indépendant
+  const missingItems = items.filter(i => i.action !== 'upgrade').sort((a, b) => {
     const na = (a.series_name || '').toLowerCase();
     const nb = (b.series_name || '').toLowerCase();
     return _queueSortDir === 'asc' ? na.localeCompare(nb) : nb.localeCompare(na);
   });
-
-  // Sépare les ajouts et les upgrades
-  const missingItems  = items.filter(i => i.action !== 'upgrade');
-  const upgradeItems  = items.filter(i => i.action === 'upgrade');
+  const upgradeItems = items.filter(i => i.action === 'upgrade').sort((a, b) => {
+    const na = (a.series_name || '').toLowerCase();
+    const nb = (b.series_name || '').toLowerCase();
+    return _upgradeSortDir === 'asc' ? na.localeCompare(nb) : nb.localeCompare(na);
+  });
 
   // Pagination ajouts
   const totalMissing = missingItems.length;
@@ -1043,6 +1045,15 @@ function sortQueueBy(col) {
   const icon = document.getElementById('queue-sort-icon');
   if (icon) icon.textContent = _queueSortDir === 'asc' ? '↑' : '↓';
   _queuePage = 1;
+  filterQueueTable();
+}
+
+function sortUpgradeBy(col) {
+  if (col !== 'series') return;
+  _upgradeSortDir = _upgradeSortDir === 'asc' ? 'desc' : 'asc';
+  const icon = document.getElementById('upgrade-sort-icon');
+  if (icon) icon.textContent = _upgradeSortDir === 'asc' ? '↑' : '↓';
+  _upgradeQueuePage = 1;
   filterQueueTable();
 }
 
@@ -1071,6 +1082,10 @@ function renderUpgradePagination(total) {
   if (totalPages <= 1) { el.innerHTML = ''; return; }
   let html = `<button class="page-btn" onclick="goUpgradePage(${_upgradeQueuePage-1})" ${_upgradeQueuePage===1?'disabled':''}>‹</button>`;
   for (let p = 1; p <= totalPages; p++) {
+    if (totalPages > 9 && p > 2 && p < totalPages - 1 && Math.abs(p - _upgradeQueuePage) > 2) {
+      if (p === 3 || p === totalPages - 2) html += `<span class="page-btn" style="cursor:default">…</span>`;
+      continue;
+    }
     html += `<button class="page-btn${p===_upgradeQueuePage?' active':''}" onclick="goUpgradePage(${p})">${p}</button>`;
   }
   html += `<button class="page-btn" onclick="goUpgradePage(${_upgradeQueuePage+1})" ${_upgradeQueuePage===totalPages?'disabled':''}>›</button>`;
@@ -1133,8 +1148,11 @@ function _renderQueueRow(item, _itemIdx) {
       infoBtn = `<button class="btn-info-hist" title="${esc(tooltip)}" onclick="showItemHistory(${esc(JSON.stringify(hist))})">ℹ</button>`;
     }
 
+    const isUpgradeRow = item.action === 'upgrade';
+    const chkClass     = isUpgradeRow ? 'upgrade-item-chk' : 'emule-item-chk';
+    const chkOnChange  = isUpgradeRow ? '_onUpgradeCheckChange()' : '_onEmuleCheckChange()';
     const chk = item.filehash
-      ? `<input type="checkbox" class="emule-item-chk" value="${esc(item.filehash)}" onchange="_onEmuleCheckChange()">`
+      ? `<input type="checkbox" class="${chkClass}" value="${esc(item.filehash)}" onchange="${chkOnChange}">`
       : '';
 
     const emulePendingBtn = isAP && item.filehash
@@ -1164,6 +1182,32 @@ function toggleSelectAllEmule(cb) {
   _onEmuleCheckChange();
 }
 
+function _onUpgradeCheckChange() {
+  const any = document.querySelectorAll('.upgrade-item-chk:checked').length > 0;
+  const btn = document.getElementById('btn-delete-upgrade');
+  if (btn) btn.style.display = any ? '' : 'none';
+}
+
+function toggleSelectAllUpgrade(cb) {
+  document.querySelectorAll('.upgrade-item-chk').forEach(c => c.checked = cb.checked);
+  _onUpgradeCheckChange();
+}
+
+async function deleteSelectedUpgrade() {
+  const checked = [...document.querySelectorAll('.upgrade-item-chk:checked')];
+  if (!checked.length) return;
+  const filehashes = checked.map(c => c.value);
+  if (!confirm(`Supprimer ${filehashes.length} upgrade(s) de la queue ?`)) return;
+  await api('/queue/items', 'DELETE', { filehashes });
+  const allChk = document.getElementById('upgrade-select-all');
+  if (allChk) allChk.checked = false;
+  const btn = document.getElementById('btn-delete-upgrade');
+  if (btn) btn.style.display = 'none';
+  await refreshQueue();
+  await loadCollections();
+  showToast(`${filehashes.length} item(s) supprimé(s) ✓`);
+}
+
 async function deleteSelectedEmule() {
   const checked = [...document.querySelectorAll('.emule-item-chk:checked')];
   if (!checked.length) return;
@@ -1183,9 +1227,12 @@ function renderQueuePagination(total) {
   if (!el) return;
   const totalPages = Math.ceil(total / QUEUE_PAGE_SIZE);
   if (totalPages <= 1) { el.innerHTML = ''; return; }
-  // Pagination locale — goQueuePage() ne recharge pas depuis le serveur
   let html = `<button class="page-btn" onclick="goQueuePage(${_queuePage-1})" ${_queuePage===1?'disabled':''}>‹</button>`;
   for (let i = 1; i <= totalPages; i++) {
+    if (totalPages > 9 && i > 2 && i < totalPages - 1 && Math.abs(i - _queuePage) > 2) {
+      if (i === 3 || i === totalPages - 2) html += `<span class="page-btn" style="cursor:default">…</span>`;
+      continue;
+    }
     html += `<button class="page-btn ${i===_queuePage?'active':''}" onclick="goQueuePage(${i})">${i}</button>`;
   }
   html += `<button class="page-btn" onclick="goQueuePage(${_queuePage+1})" ${_queuePage===totalPages?'disabled':''}>›</button>`;
@@ -1293,6 +1340,7 @@ async function loadCollections() {
           <span class="collection-name" style="font-size:12px">${esc(f.filename)}</span>
           <span class="collection-meta">${f.links} liens · ${f.size_kb} Ko · ${esc(f.created)}</span>
           <a href="/api/queue/collections/${esc(f.filename)}" class="btn btn-sm btn-secondary" download style="padding:3px 8px;font-size:11px">↓</a>
+          <button class="btn btn-sm btn-danger" style="padding:3px 8px;font-size:11px" onclick="deleteCollection('${esc(f.filename)}')" title="Supprimer">✕</button>
         </div>`).join('')}
     </div>`;
   };
@@ -1301,6 +1349,17 @@ async function loadCollections() {
     renderGroup('📥 Téléchargements (ADD)',     addFiles,     'ADD')     +
     renderGroup('⬆ Upgrades (UPGRADE)',         upgradeFiles, 'UPGRADE') +
     renderGroup('📋 Autres',                    otherFiles,   'all');
+}
+
+async function deleteCollection(filename) {
+  if (!confirm(`Supprimer le fichier "${filename}" ?`)) return;
+  const d = await api(`/queue/collections/${encodeURIComponent(filename)}`, 'DELETE');
+  if (d.ok) {
+    showToast('Fichier supprimé ✓');
+    loadCollections();
+  } else {
+    showToast(d.message || 'Erreur suppression', 'error');
+  }
 }
 
 async function clearQueue(mode) {
@@ -2316,9 +2375,19 @@ function filterTorrentQueueTable() {
   const pag = document.getElementById('torrent-queue-pagination');
   if (pag) {
     const pages = Math.ceil(total / TORRENT_PAGE_SIZE);
-    pag.innerHTML = pages <= 1 ? '' : Array.from({length:pages},(_,i)=>
-      `<button class="page-btn ${i+1===_torrentQueuePage?'active':''}" onclick="_torrentQueuePage=${i+1};filterTorrentQueueTable()">${i+1}</button>`
-    ).join('');
+    if (pages <= 1) { pag.innerHTML = ''; }
+    else {
+      let ph = `<button class="page-btn" onclick="_torrentQueuePage=Math.max(1,_torrentQueuePage-1);filterTorrentQueueTable()" ${_torrentQueuePage===1?'disabled':''}>‹</button>`;
+      for (let i = 1; i <= pages; i++) {
+        if (pages > 9 && i > 2 && i < pages - 1 && Math.abs(i - _torrentQueuePage) > 2) {
+          if (i === 3 || i === pages - 2) ph += `<span class="page-btn" style="cursor:default">…</span>`;
+          continue;
+        }
+        ph += `<button class="page-btn ${i===_torrentQueuePage?'active':''}" onclick="_torrentQueuePage=${i};filterTorrentQueueTable()">${i}</button>`;
+      }
+      ph += `<button class="page-btn" onclick="_torrentQueuePage=Math.min(${pages},_torrentQueuePage+1);filterTorrentQueueTable()" ${_torrentQueuePage===pages?'disabled':''}>›</button>`;
+      pag.innerHTML = ph;
+    }
   }
 }
 

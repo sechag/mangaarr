@@ -2231,6 +2231,20 @@ def api_download_collection(filename):
     from flask import send_file
     return send_file(fp, as_attachment=True)
 
+@app.route("/api/queue/collections/<filename>", methods=["DELETE"])
+def api_delete_collection(filename):
+    import re as _re
+    if not _re.match(r'^[\w\.\-]+\.emulecollection$', filename):
+        return jsonify({"ok": False, "message": "Nom invalide"}), 400
+    fp = os.path.join(queue_manager.EMULE_DIR, filename)
+    if not os.path.isfile(fp):
+        return jsonify({"ok": False, "message": "Fichier introuvable"}), 404
+    try:
+        os.remove(fp)
+        return jsonify({"ok": True})
+    except Exception as e:
+        return jsonify({"ok": False, "message": str(e)}), 500
+
 @app.route("/api/queue/status/<filehash>", methods=["PATCH"])
 def api_update_queue_status(filehash):
     status = request.json.get("status", "")

@@ -580,13 +580,19 @@
 
       <!-- Section Upgrades -->
       <div id="queue-section-upgrade" style="margin-top:16px">
-        <h3 style="font-size:13px;font-weight:600;color:var(--text-dim);margin:12px 0 6px;text-transform:uppercase;letter-spacing:.05em">Upgrades</h3>
+        <div style="display:flex;align-items:center;gap:8px;margin:12px 0 6px">
+          <h3 style="font-size:13px;font-weight:600;color:var(--text-dim);text-transform:uppercase;letter-spacing:.05em;margin:0">Upgrades</h3>
+          <button class="btn btn-danger btn-sm" id="btn-delete-upgrade" style="display:none" onclick="deleteSelectedUpgrade()">
+            <svg viewBox="0 0 20 20" fill="currentColor" style="width:13px;height:13px"><path fill-rule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clip-rule="evenodd"/></svg>
+            Supprimer sélectionnés
+          </button>
+        </div>
         <div class="queue-table-wrap">
           <table class="queue-table">
             <thead>
               <tr>
-                <th style="width:30px"></th>
-                <th>Série</th>
+                <th style="width:30px"><input type="checkbox" id="upgrade-select-all" onchange="toggleSelectAllUpgrade(this)" title="Tout sélectionner"></th>
+                <th class="queue-th-sortable" onclick="sortUpgradeBy('series')" style="cursor:pointer;user-select:none">Série <span id="upgrade-sort-icon">↕</span></th>
                 <th>Fichier</th><th>Tome</th><th>Tag</th><th>Progression</th>
               </tr>
             </thead>
