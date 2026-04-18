@@ -756,21 +756,57 @@ def _get_amule_client():
 @app.route("/api/amule/add-links", methods=["POST"])
 def api_amule_add_links():
     """
-    Envoie une liste de liens ed2k à aMule via amulecmd, un par un.
+    Envoie une liste de liens ed2k à aMule via amulecmd, un par un,
+    et les ajoute à la queue MangaArr (même comportement que generate-collection).
     Body : { items: [{url, tome_number, ...}], series_name: str }
     """
-    d       = request.json or {}
-    urls    = [it.get("url", "") for it in d.get("items", []) if it.get("url", "").startswith("ed2k://")]
-    if not urls:
+    d           = request.json or {}
+    series_name = d.get("series_name", "").strip()
+    items_in    = d.get("items", [])
+
+    if not items_in:
         return jsonify({"ok": False, "message": "Aucun lien ed2k fourni"})
     client = _get_amule_client()
     if not client:
         return jsonify({"ok": False, "message": "Aucun client aMule configuré et activé"})
-    # Exécution en thread pour ne pas bloquer (envoi un par un avec délai)
+
+    # Parse les liens et construit les items queue (même logique que generate-collection)
+    items = []
+    for it in items_in:
+        parsed = ebdz_scraper.parse_ed2k(it.get("url", ""))
+        if not parsed:
+            continue
+        items.append({
+            "filename":     parsed["filename"],
+            "filesize":     parsed["filesize"],
+            "filehash":     parsed["filehash"],
+            "url":          parsed["url"],
+            "tome_number":  it.get("tome_number") or parsed.get("tome_number", ""),
+            "tag":          parsed.get("tag", ""),
+            "series_name":  series_name,
+            "series_exact": True,
+            "action":       "missing",
+        })
+
+    if not items:
+        return jsonify({"ok": False, "message": "Aucun lien ed2k valide"})
+
+    # Ajout à la queue MangaArr
+    r    = queue_manager.add_to_queue(items)
+    urls = [i["url"] for i in items]
+
+    # Envoi à aMule en arrière-plan, un par un
     def _send():
         amule_client.add_ed2k_batch(client, urls)
     threading.Thread(target=_send, daemon=True).start()
-    return jsonify({"ok": True, "queued": len(urls), "message": f"{len(urls)} lien(s) envoyé(s) à aMule"})
+
+    return jsonify({
+        "ok":      True,
+        "queued":  len(urls),
+        "added":   r["added"],
+        "skipped": r["skipped"],
+        "message": f"{len(urls)} lien(s) envoyé(s) à aMule",
+    })
 
 
 @app.route("/api/amule/cancel", methods=["POST"])
