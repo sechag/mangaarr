@@ -7,6 +7,7 @@ queue_manager.py — Gestion de la queue de téléchargements MangaArr
 import os, json, re, threading
 from datetime import datetime
 from urllib.parse import unquote
+import config as _config_mod
 
 # EMULE_DIR : overridable via env var Docker (MANGAARR_EMULE)
 EMULE_DIR = os.environ.get(
@@ -131,11 +132,11 @@ def delete_items(filehashes: list) -> dict:
         kept       = [i for i in items if i.get("filehash", "") not in hashes]
         _save(kept)
 
-    # Retire les liens ed2k des .emulecollection existants
+    # Retire les liens ed2k des .emulecollection et .txt existants
     urls_to_remove = {i.get("url", "").strip() for i in to_delete if i.get("url")}
     if urls_to_remove and os.path.isdir(EMULE_DIR):
         for fname in os.listdir(EMULE_DIR):
-            if not fname.endswith(".emulecollection"):
+            if not (fname.endswith(".emulecollection") or fname.endswith(".txt")):
                 continue
             fpath = os.path.join(EMULE_DIR, fname)
             try:
@@ -212,19 +213,31 @@ def _filter_items(items: list) -> list:
         return items
 
 
+def _collection_ext() -> str:
+    """Retourne .txt ou .emulecollection selon la config."""
+    try:
+        mm = _config_mod.get("media_management", {})
+        if mm.get("emulecollection_as_txt", False):
+            return ".txt"
+    except Exception:
+        pass
+    return ".emulecollection"
+
+
 def _write_collection_files(links: list, base_name: str) -> list:
     """
-    Écrit une ou plusieurs parties .emulecollection (max MAX_LINKS_PER_FILE liens).
+    Écrit une ou plusieurs parties .emulecollection / .txt (max MAX_LINKS_PER_FILE liens).
     Retourne la liste des chemins créés.
     """
     if not links:
         return []
+    ext   = _collection_ext()
     ts    = datetime.now().strftime("%Y%m%d_%H%M%S")
     paths = []
     parts = [links[i:i+MAX_LINKS_PER_FILE] for i in range(0, len(links), MAX_LINKS_PER_FILE)]
     for idx, part in enumerate(parts, 1):
         suffix = f"_part{idx}" if len(parts) > 1 else ""
-        fname  = f"{ts}_{base_name}{suffix}.emulecollection"
+        fname  = f"{ts}_{base_name}{suffix}{ext}"
         fpath  = os.path.join(EMULE_DIR, fname)
         with open(fpath, "w", encoding="utf-8") as f:
             f.write("\n".join(part) + "\n")
@@ -256,22 +269,21 @@ def generate_emulecollection(items: list = None, label: str = "",
                      and i.get("action") == "upgrade"]
 
     if series_prefix:
-        # Format : {Serie}.{ts}_ADD.emulecollection
+        ext    = _collection_ext()
         safe   = re.sub(r"[^A-Za-z0-9._\-]", "_", series_prefix)[:40]
         ts     = datetime.now().strftime("%Y%m%d_%H%M%S")
         all_paths = []
         if add_links:
-            fname = f"{safe}.{ts}_ADD.emulecollection"
-            fpath = os.path.join(EMULE_DIR, fname)
             chunks = [add_links[i:i+MAX_LINKS_PER_FILE] for i in range(0, len(add_links), MAX_LINKS_PER_FILE)]
             for idx, chunk in enumerate(chunks, 1):
                 suffix = f"_part{idx}" if len(chunks) > 1 else ""
-                fp = fpath.replace(".emulecollection", f"{suffix}.emulecollection")
+                fname  = f"{safe}.{ts}_ADD{suffix}{ext}"
+                fp     = os.path.join(EMULE_DIR, fname)
                 with open(fp, "w", encoding="utf-8") as f:
                     f.write("\n".join(chunk) + "\n")
                 all_paths.append(fp)
         if upgrade_links:
-            fname = f"{safe}.{ts}_UPGRADE.emulecollection"
+            fname = f"{safe}.{ts}_UPGRADE{ext}"
             fpath = os.path.join(EMULE_DIR, fname)
             with open(fpath, "w", encoding="utf-8") as f:
                 f.write("\n".join(upgrade_links) + "\n")
@@ -291,19 +303,20 @@ def generate_emulecollection(items: list = None, label: str = "",
 
 
 def list_emulecollections() -> list:
-    """Liste les fichiers .emulecollection générés [{filename, path, size, created}]."""
+    """Liste les fichiers .emulecollection et .txt générés [{filename, path, size, created}]."""
     files = []
     for fn in sorted(os.listdir(EMULE_DIR), reverse=True):
-        if fn.endswith(".emulecollection"):
-            fp = os.path.join(EMULE_DIR, fn)
-            stat = os.stat(fp)
-            files.append({
-                "filename": fn,
-                "path":     fp,
-                "size_kb":  round(stat.st_size / 1024, 1),
-                "created":  datetime.fromtimestamp(stat.st_mtime).strftime("%Y-%m-%d %H:%M:%S"),
-                "links":    sum(1 for line in open(fp) if line.startswith("ed2k://")),
-            })
+        if not (fn.endswith(".emulecollection") or fn.endswith(".txt")):
+            continue
+        fp = os.path.join(EMULE_DIR, fn)
+        stat = os.stat(fp)
+        files.append({
+            "filename": fn,
+            "path":     fp,
+            "size_kb":  round(stat.st_size / 1024, 1),
+            "created":  datetime.fromtimestamp(stat.st_mtime).strftime("%Y-%m-%d %H:%M:%S"),
+            "links":    sum(1 for line in open(fp) if line.startswith("ed2k://")),
+        })
     return files
 
 

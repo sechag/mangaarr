@@ -53,7 +53,7 @@ def search_series(title, source_id=None):
     for source in sources:
         try:
             r = requests.get(f"{_base(source)}/api/search",
-                params={"q": title, "threshold": 0.55, "limit": 5}, timeout=TIMEOUT)
+                params={"q": title, "threshold": 0.65, "limit": 5}, timeout=TIMEOUT)
             if r.status_code == 200:
                 results.extend(r.json().get("results", []))
         except: pass
@@ -63,7 +63,7 @@ def find_best_match(title, source_id=None):
     results = search_series(title, source_id)
     if not results: return None
     best = results[0]
-    if best.get("score", 0) < 0.55:
+    if best.get("score", 0) < 0.65:
         return None
     meta = _normalize_result(best)
     # /api/search ne retourne pas "url" → on le récupère via /api/series si manquant

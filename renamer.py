@@ -72,6 +72,8 @@ def detect_tome(filename: str) -> str | None:
         r"#\s*(\d{1,3})\b",
         # [01]
         r"\[(\d{1,3})\]",
+        # -.01.-
+        r"-\.(\d{1,3})\.-",
         # - 01 - ou - 01 en fin
         r"[-\s](\d{1,3})(?:\s*[-\s]|$)",
         # _01_ ou _01 fin

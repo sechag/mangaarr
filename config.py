@@ -13,10 +13,11 @@ DEFAULTS = {
     "download_dir": "",
     "libraries": [],           # [{id, name, path}] — librairies locales
     "media_management": {
-        "auto_rename":      True,
-        "auto_convert_cbr": True,
-        "auto_convert_pdf": True,
-        "auto_replace":     True,
+        "auto_rename":           True,
+        "auto_convert_cbr":      True,
+        "auto_convert_pdf":      True,
+        "auto_replace":          True,
+        "emulecollection_as_txt": False,
     },
     "profiles": {
         "tags":             [],

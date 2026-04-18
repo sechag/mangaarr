@@ -1,4 +1,4 @@
-# MangaArr
+# MangaArr v0.21
 
 Gestionnaire de manga automatisé : eMule/qBittorrent + ebdz.net + MangaDB.
 

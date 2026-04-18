@@ -19,7 +19,7 @@ import os, uuid, threading, re, unicodedata, json, time
 import config, profiles, renamer, media_manager
 import ebdz_scraper, mangadb_client, cache as cache_mod, queue_manager
 import library_manager as lib_mgr
-import torznab_client, qbittorrent_client
+import torznab_client, qbittorrent_client, amule_client
 import discover_manager
 import ebdz_browser
 
@@ -191,31 +191,37 @@ def api_list_download_clients():
 
 @app.route("/api/settings/download-clients", methods=["POST"])
 def api_add_download_client():
-    d = request.json or {}
+    d         = request.json or {}
     name      = d.get("name", "").strip()
     host      = d.get("host", "").strip()
-    port      = int(d.get("port", 8080))
-    username  = d.get("username", "").strip()
-    password  = d.get("password", "").strip()
-    category  = d.get("category", "").strip()
-    save_path  = d.get("save_path", "").strip()
-    watch_path = d.get("watch_path", "").strip()
+    client_type = d.get("type", "qbittorrent").strip()
     if not name or not host:
         return jsonify({"ok": False, "message": "Nom et host requis"})
     cfg = config.load()
-    client = {
-        "id":         str(uuid.uuid4())[:8],
-        "name":       name,
-        "type":       "qbittorrent",
-        "host":       host,
-        "port":       port,
-        "username":   username,
-        "password":   password,
-        "category":   category,
-        "save_path":  save_path,
-        "watch_path": watch_path,
-        "enabled":    True,
-    }
+    if client_type == "amule":
+        client = {
+            "id":       str(uuid.uuid4())[:8],
+            "name":     name,
+            "type":     "amule",
+            "host":     host,
+            "ec_port":  int(d.get("ec_port", 4712)),
+            "password": d.get("password", "").strip(),
+            "enabled":  True,
+        }
+    else:
+        client = {
+            "id":         str(uuid.uuid4())[:8],
+            "name":       name,
+            "type":       "qbittorrent",
+            "host":       host,
+            "port":       int(d.get("port", 8080)),
+            "username":   d.get("username", "").strip(),
+            "password":   d.get("password", "").strip(),
+            "category":   d.get("category", "").strip(),
+            "save_path":  d.get("save_path", "").strip(),
+            "watch_path": d.get("watch_path", "").strip(),
+            "enabled":    True,
+        }
     cfg.setdefault("download_clients", []).append(client)
     config.save(cfg)
     safe = dict(client)
@@ -250,7 +256,10 @@ def api_test_download_client(client_id):
     client  = next((c for c in clients if c.get("id") == client_id), None)
     if not client:
         return jsonify({"ok": False, "message": "Client introuvable"})
-    result = qbittorrent_client.test_connection(client)
+    if client.get("type") == "amule":
+        result = amule_client.test_connection(client)
+    else:
+        result = qbittorrent_client.test_connection(client)
     return jsonify(result)
 
 @app.route("/api/settings/download-clients/info", methods=["GET"])
@@ -623,6 +632,8 @@ def page_ebdz_browser():
 @app.route("/api/ebdz-proxy")
 def api_ebdz_proxy():
     url = request.args.get("url", "").strip() or ebdz_browser.EBDZ_HOME
+    if "#" in url:
+        url = url[:url.index("#")]
     cfg      = config.load()
     mybbuser = cfg.get("mybbuser", "")
     if not mybbuser:
@@ -647,6 +658,9 @@ def api_ebdz_extract_ed2k():
     Retourne {ok, links: [{url, filename, filesize, filehash, tome_number, tag}]}
     """
     url      = request.args.get("url", "").strip()
+    # Ignore le fragment (#ancre) — non transmis au serveur HTTP
+    if "#" in url:
+        url = url[:url.index("#")]
     mybbuser = config.get("mybbuser", "")
     if not url:
         return jsonify({"ok": False, "links": [], "message": "URL manquante"})
@@ -727,6 +741,55 @@ def api_ebdz_add_ed2k():
         queue_manager.generate_emulecollection(label="ebdz-browser")
     return jsonify({"ok": True, "added": r["added"], "skipped": r["skipped"],
                     "filename": parsed["filename"]})
+
+
+# ══════════════════════════════════════════════════════════
+# AMULE
+# ══════════════════════════════════════════════════════════
+
+def _get_amule_client():
+    """Retourne le premier client amule actif ou None."""
+    clients = config.get("download_clients", [])
+    return next((c for c in clients if c.get("type") == "amule" and c.get("enabled", True)), None)
+
+
+@app.route("/api/amule/add-links", methods=["POST"])
+def api_amule_add_links():
+    """
+    Envoie une liste de liens ed2k à aMule via amulecmd, un par un.
+    Body : { items: [{url, tome_number, ...}], series_name: str }
+    """
+    d       = request.json or {}
+    urls    = [it.get("url", "") for it in d.get("items", []) if it.get("url", "").startswith("ed2k://")]
+    if not urls:
+        return jsonify({"ok": False, "message": "Aucun lien ed2k fourni"})
+    client = _get_amule_client()
+    if not client:
+        return jsonify({"ok": False, "message": "Aucun client aMule configuré et activé"})
+    # Exécution en thread pour ne pas bloquer (envoi un par un avec délai)
+    def _send():
+        amule_client.add_ed2k_batch(client, urls)
+    threading.Thread(target=_send, daemon=True).start()
+    return jsonify({"ok": True, "queued": len(urls), "message": f"{len(urls)} lien(s) envoyé(s) à aMule"})
+
+
+@app.route("/api/amule/cancel", methods=["POST"])
+def api_amule_cancel():
+    """
+    Annule des téléchargements aMule par leurs hashes, un par un.
+    Body : { hashes: ["hash1", "hash2", ...] }
+    """
+    d      = request.json or {}
+    hashes = d.get("hashes", [])
+    if not hashes:
+        return jsonify({"ok": False, "message": "Aucun hash fourni"})
+    client = _get_amule_client()
+    if not client:
+        return jsonify({"ok": False, "message": "Aucun client aMule configuré et activé"})
+    def _cancel():
+        amule_client.cancel_hashes_batch(client, hashes)
+    threading.Thread(target=_cancel, daemon=True).start()
+    return jsonify({"ok": True, "queued": len(hashes), "message": f"{len(hashes)} annulation(s) envoyée(s)"})
 
 
 @app.route("/api/discover/series")
@@ -2297,13 +2360,20 @@ def api_delete_queue_items():
     """
     Supprime des items de la queue eMule par leurs filehashes.
     Body : { filehashes: ["hash1", "hash2", ...] }
-    Met aussi à jour les .emulecollection existants.
+    Met aussi à jour les .emulecollection / .txt existants.
+    Si un client aMule est configuré, annule aussi dans aMule.
     """
-    d         = request.json or {}
+    d          = request.json or {}
     filehashes = d.get("filehashes", [])
     if not filehashes:
         return jsonify({"ok": False, "message": "Aucun filehash fourni"})
     result = queue_manager.delete_items(filehashes)
+    # Annulation aMule en arrière-plan si client actif
+    amule_cl = _get_amule_client()
+    if amule_cl:
+        def _cancel():
+            amule_client.cancel_hashes_batch(amule_cl, filehashes)
+        threading.Thread(target=_cancel, daemon=True).start()
     return jsonify({"ok": True, **result})
 
 

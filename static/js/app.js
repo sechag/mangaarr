@@ -351,12 +351,13 @@ async function saveMediaSettings() {
   const forceOrg = document.getElementById('toggle-force-organize').checked;
   const fmtEl    = document.querySelector('input[name="rename-format"]:checked');
   const mm = {
-    auto_rename:            document.getElementById('toggle-rename').checked,
-    auto_convert_cbr:       document.getElementById('toggle-cbr').checked,
-    auto_convert_pdf:       document.getElementById('toggle-pdf').checked,
-    auto_replace:           document.getElementById('toggle-replace').checked,
-    force_organize_enabled: forceOrg,
-    rename_format:          fmtEl ? parseInt(fmtEl.value) : 1,
+    auto_rename:              document.getElementById('toggle-rename').checked,
+    auto_convert_cbr:         document.getElementById('toggle-cbr').checked,
+    auto_convert_pdf:         document.getElementById('toggle-pdf').checked,
+    auto_replace:             document.getElementById('toggle-replace').checked,
+    force_organize_enabled:   forceOrg,
+    rename_format:            fmtEl ? parseInt(fmtEl.value) : 1,
+    emulecollection_as_txt:   document.getElementById('toggle-emule-txt').checked,
   };
   _forceOrganizeEnabled = forceOrg;
   await api('/config', 'POST', { media_management: mm });
@@ -382,6 +383,8 @@ async function loadMediaSettings() {
   document.getElementById('toggle-replace').checked        = mm.auto_replace           ?? true;
   document.getElementById('toggle-force-organize').checked = mm.force_organize_enabled ?? false;
   _forceOrganizeEnabled = mm.force_organize_enabled ?? false;
+  const txtEl = document.getElementById('toggle-emule-txt');
+  if (txtEl) txtEl.checked = mm.emulecollection_as_txt ?? false;
   const fmt   = String(mm.rename_format ?? 1);
   const fmtEl = document.querySelector(`input[name="rename-format"][value="${fmt}"]`);
   if (fmtEl) fmtEl.checked = true;
@@ -2227,11 +2230,16 @@ async function loadDownloadClients() {
     list.innerHTML = '<p style="color:var(--text-dim);font-size:12px">Aucun client configuré.</p>';
     return;
   }
-  list.innerHTML = clients.map(c => `
+  list.innerHTML = clients.map(c => {
+    const isAmule  = c.type === 'amule';
+    const subtitle = isAmule
+      ? `${esc(c.host)}:${c.ec_port || 4712} · aMule`
+      : `${esc(c.host)}:${c.port} · catégorie : <em>${esc(c.category||'(aucune)')}</em>`;
+    return `
     <div class="dc-card">
       <div class="dc-card-info">
         <div class="dc-card-name">${esc(c.name)}</div>
-        <div class="dc-card-url">${esc(c.host)}:${c.port} · catégorie : <em>${esc(c.category||'(aucune)')}</em></div>
+        <div class="dc-card-url">${subtitle}</div>
       </div>
       <div class="dc-card-actions">
         <label class="toggle" title="${c.enabled ? 'Actif' : 'Désactivé'}">
@@ -2242,34 +2250,57 @@ async function loadDownloadClients() {
         <button class="btn btn-sm btn-secondary" onclick="testDownloadClient('${esc(c.id)}', this)">Tester</button>
         <button class="btn btn-sm btn-danger"    onclick="deleteDownloadClient('${esc(c.id)}')">✕</button>
       </div>
-    </div>`).join('');
+    </div>`;
+  }).join('');
+}
+
+function onDcTypeChange() {
+  const type = (document.getElementById('dc-type') || {}).value;
+  const qbt  = document.getElementById('dc-qbt-fields');
+  const am   = document.getElementById('dc-amule-fields');
+  if (qbt) qbt.style.display = type === 'amule' ? 'none' : '';
+  if (am)  am.style.display  = type === 'amule' ? ''     : 'none';
 }
 
 async function addDownloadClient() {
-  const name      = (document.getElementById('dc-name')      || {}).value?.trim();
-  const host      = (document.getElementById('dc-host')      || {}).value?.trim();
-  const port      = parseInt((document.getElementById('dc-port') || {}).value || '8080');
-  const username  = (document.getElementById('dc-username')  || {}).value?.trim();
-  const password  = (document.getElementById('dc-password')  || {}).value?.trim();
-  const category  = (document.getElementById('dc-category')  || {}).value?.trim();
-  const status = document.getElementById('dc-add-status');
+  const type    = (document.getElementById('dc-type')    || {}).value || 'qbittorrent';
+  const name    = (document.getElementById('dc-name')    || {}).value?.trim();
+  const host    = (document.getElementById('dc-host')    || {}).value?.trim();
+  const status  = document.getElementById('dc-add-status');
 
   if (!name || !host) {
     if (status) { status.textContent = 'Nom et host requis'; status.className = 'status-msg error'; }
     return;
   }
   if (status) { status.textContent = 'Ajout…'; status.className = 'status-msg'; }
-  const d = await api('/settings/download-clients', 'POST', { name, host, port, username, password, category });
+
+  let payload;
+  if (type === 'amule') {
+    const ec_port  = parseInt((document.getElementById('dc-ec-port')        || {}).value || '4712');
+    const password = (document.getElementById('dc-amule-password') || {}).value?.trim();
+    payload = { type, name, host, ec_port, password };
+  } else {
+    const port      = parseInt((document.getElementById('dc-port')     || {}).value || '8080');
+    const username  = (document.getElementById('dc-username')  || {}).value?.trim();
+    const password  = (document.getElementById('dc-password')  || {}).value?.trim();
+    const category  = (document.getElementById('dc-category')  || {}).value?.trim();
+    payload = { type, name, host, port, username, password, category };
+  }
+
+  const d = await api('/settings/download-clients', 'POST', payload);
   if (status) {
     status.textContent = d.ok ? 'Ajouté ✓' : (d.message || 'Erreur');
     status.className   = 'status-msg ' + (d.ok ? 'ok' : 'error');
   }
   if (d.ok) {
-    ['dc-name','dc-host','dc-username','dc-password','dc-category'].forEach(id => {
+    ['dc-name','dc-host','dc-username','dc-password','dc-category','dc-amule-password'].forEach(id => {
       const el = document.getElementById(id);
       if (el) el.value = '';
     });
-    document.getElementById('dc-port').value = '8080';
+    const portEl = document.getElementById('dc-port');
+    if (portEl) portEl.value = '8080';
+    const ecEl = document.getElementById('dc-ec-port');
+    if (ecEl) ecEl.value = '4712';
     loadDownloadClients();
     setTimeout(() => { if (status) status.textContent = ''; }, 2500);
   }

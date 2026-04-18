@@ -461,10 +461,10 @@
       <div id="sb-empty-links">Cliquez sur "Détecter" pour extraire les liens ed2k de la page courante</div>
     </div>
 
-    <!-- Paste manuel -->
+    <!-- Paste / drag manuel -->
     <div class="sb-section" style="padding-top:6px;">
-      <div class="sb-label">Coller des liens manuellement</div>
-      <textarea id="sb-paste-area" placeholder="Coller un ou plusieurs liens ed2k ici, un par ligne…" style="
+      <div class="sb-label">Coller ou déposer des liens manuellement</div>
+      <textarea id="sb-paste-area" placeholder="Coller ou glisser-déposer des liens ed2k ici, un par ligne…" style="
         width:100%; height:64px; resize:vertical;
         background:var(--bg-card); border:1px solid var(--border);
         border-radius:6px; color:var(--text); padding:6px 8px;
@@ -482,6 +482,11 @@
     <!-- Footer generate -->
     <div id="sb-footer">
       <div id="sb-footer-info"></div>
+      <button id="btn-send-amule" onclick="sendToAmule()" disabled style="
+        background:#1a6b3c; color:#fff; border:none; border-radius:6px;
+        padding:7px 10px; font-size:12px; cursor:pointer; width:100%; margin-bottom:5px;">
+        Envois Amule
+      </button>
       <button id="btn-generate" onclick="generateCollection()" disabled>
         Générer .emulecollection
       </button>
@@ -530,8 +535,11 @@
   // ════════════════════════════════
   function navTo(url) {
     if (!url) return;
+    // Strip le fragment (#ancre) — non transmis au serveur HTTP
+    const hashIdx = url.indexOf('#');
+    const cleanUrl = hashIdx !== -1 ? url.slice(0, hashIdx) : url;
     loader.style.display = 'flex';
-    frame.src = `/api/ebdz-proxy?url=${encodeURIComponent(url)}`;
+    frame.src = `/api/ebdz-proxy?url=${encodeURIComponent(cleanUrl)}`;
     urlBar.value = url;
   }
 
@@ -684,7 +692,7 @@
       document.getElementById('mdb-note').textContent = 'Recherche…';
       try {
         const r = await fetch(`/api/collection/add-search?q=${encodeURIComponent(q)}`).then(r => r.json());
-        const items = r.results || [];
+        const items = (r.results || []).slice(0, 5);
         document.getElementById('mdb-note').textContent = '';
         const ul = document.getElementById('mdb-results');
         ul.innerHTML = '';
@@ -853,10 +861,11 @@
   }
 
   function updateFooter() {
-    const info      = document.getElementById('sb-footer-info');
-    const btnGen    = document.getElementById('btn-generate');
-    const count     = _ed2kLinks.length;
-    const hasSeries = !!_activeSeries;
+    const info        = document.getElementById('sb-footer-info');
+    const btnGen      = document.getElementById('btn-generate');
+    const btnAmule    = document.getElementById('btn-send-amule');
+    const count       = _ed2kLinks.length;
+    const hasSeries   = !!_activeSeries;
     if (!hasSeries && count > 0) {
       info.textContent = 'Sélectionnez une série';
       info.style.color = 'var(--warning)';
@@ -866,7 +875,9 @@
     } else {
       info.textContent = '';
     }
-    btnGen.disabled = !(hasSeries && count > 0);
+    const canAct = hasSeries && count > 0;
+    btnGen.disabled   = !canAct;
+    btnAmule.disabled = !canAct;
   }
 
   // ── Collage manuel ──
@@ -968,6 +979,66 @@
       .replace(/>/g,'&gt;')
       .replace(/"/g,'&quot;')
       .replace(/'/g,'&#39;');
+  }
+
+  // ════════════════════════════════
+  // Drag & drop sur la textarea
+  // ════════════════════════════════
+  (function() {
+    const area = document.getElementById('sb-paste-area');
+    area.addEventListener('dragover', e => {
+      e.preventDefault();
+      area.style.borderColor = 'var(--accent)';
+    });
+    area.addEventListener('dragleave', () => {
+      area.style.borderColor = '';
+    });
+    area.addEventListener('drop', e => {
+      e.preventDefault();
+      area.style.borderColor = '';
+      // Récupère le texte ou l'URL droppée
+      const text = e.dataTransfer.getData('text/plain') || e.dataTransfer.getData('text/uri-list') || '';
+      if (!text) return;
+      const current = area.value;
+      area.value = current ? current + '\n' + text.trim() : text.trim();
+    });
+  })();
+
+  // ════════════════════════════════
+  // Envois Amule
+  // ════════════════════════════════
+  async function sendToAmule() {
+    if (!_activeSeries || _ed2kLinks.length === 0) return;
+    const btn = document.getElementById('btn-send-amule');
+    btn.disabled = true;
+    btn.textContent = 'Envoi…';
+    navStatus.textContent = 'Envoi aMule…';
+
+    const items = _ed2kLinks.map(l => ({ url: l.url, tome_number: l.tome_number }));
+    try {
+      const r = await fetch('/api/amule/add-links', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ series_name: _activeSeries, items }),
+      }).then(r => r.json());
+
+      if (r.ok) {
+        showToast(`✓ ${r.message || `${r.queued} lien(s) envoyé(s) à aMule`}`, 'ok');
+        navStatus.textContent = '✓ Envoyé à aMule';
+        _ed2kLinks = [];
+        renderLinks();
+      } else {
+        showToast(`✗ ${r.message || 'Erreur aMule'}`, 'err');
+        navStatus.textContent = '✗ Erreur';
+      }
+    } catch(err) {
+      showToast('Erreur réseau', 'err');
+    }
+
+    btn.disabled = false;
+    btn.textContent = 'Envois Amule';
+    setTimeout(() => { navStatus.textContent = ''; }, 3000);
+    updateFooter();
   }
 </script>
 </body>
