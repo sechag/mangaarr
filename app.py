@@ -753,6 +753,12 @@ def _get_amule_client():
     return next((c for c in clients if c.get("type") == "amule" and c.get("enabled", True)), None)
 
 
+@app.route("/api/amule/available")
+def api_amule_available():
+    """Indique si un client aMule est configuré et actif."""
+    return jsonify({"available": _get_amule_client() is not None})
+
+
 @app.route("/api/amule/add-links", methods=["POST"])
 def api_amule_add_links():
     """
@@ -1313,13 +1319,17 @@ def api_search_tomes(series_slug):
 
 @app.route("/api/collection/series/<path:series_slug>/add-tomes", methods=["POST"])
 def api_add_tomes_to_queue(series_slug):
-    """Ajoute des tomes sélectionnés à la queue + génère .emulecollection."""
+    """
+    Ajoute des tomes sélectionnés à la queue.
+    delivery : "emulecollection" (défaut) | "amule" | "queue_only"
+    """
     series_info = lib_mgr.resolve_slug(series_slug)
     if not series_info:
         return jsonify({"ok": False, "message": "Série introuvable"})
 
     d          = request.json or {}
-    tomes_data = d.get("tomes", [])  # [{url, filename, filehash, filesize, tag, tome_str, action}]
+    tomes_data = d.get("tomes", [])
+    delivery   = d.get("delivery", "emulecollection")
     if not tomes_data:
         return jsonify({"ok": False, "message": "Aucun tome fourni"})
 
@@ -1344,20 +1354,32 @@ def api_add_tomes_to_queue(series_slug):
     r       = queue_manager.add_to_queue(items)
     added   = r["added"]
     skipped = r["skipped"]
-    # Nom de fichier : {Serie}.{datetime}_ADD.emulecollection
-    series_label = re.sub(r"[^A-Za-z0-9_\-]", ".", series_info["name"].replace(" ", "."))
-    fp      = queue_manager.generate_emulecollection(items, series_prefix=series_label)
-    msg = f"{added} tome(s) ajouté(s) à la queue"
+    msg     = f"{added} tome(s) ajouté(s) à la queue"
     if skipped:
         msg += f", {skipped} doublon(s) ignoré(s)"
-    return jsonify({
-        "ok":         True,
-        "added":      added,
-        "skipped":    skipped,
-        "file":       os.path.basename(fp) if fp else None,
-        "download":   True,   # Indique au frontend de déclencher le téléchargement
-        "message":    msg,
-    })
+
+    series_label = re.sub(r"[^A-Za-z0-9_\-]", ".", series_info["name"].replace(" ", "."))
+
+    if delivery == "amule":
+        amule_cl = _get_amule_client()
+        if not amule_cl:
+            return jsonify({"ok": False, "message": "Aucun client aMule configuré"})
+        urls = [i["url"] for i in items if i.get("url", "").startswith("ed2k://")]
+        def _send():
+            amule_client.add_ed2k_batch(amule_cl, urls)
+        threading.Thread(target=_send, daemon=True).start()
+        return jsonify({"ok": True, "added": added, "skipped": skipped,
+                        "delivery": "amule", "message": msg})
+
+    elif delivery == "emulecollection":
+        fp = queue_manager.generate_emulecollection(items, series_prefix=series_label)
+        return jsonify({"ok": True, "added": added, "skipped": skipped,
+                        "file": os.path.basename(fp) if fp else None,
+                        "download": True, "delivery": "emulecollection", "message": msg})
+
+    # queue_only : juste ajouter à la queue, pas de fichier ni d'envoi
+    return jsonify({"ok": True, "added": added, "skipped": skipped,
+                    "delivery": "queue_only", "message": msg})
 
 
 @app.route("/api/collection/series/<path:series_slug>/rename-tome", methods=["POST"])

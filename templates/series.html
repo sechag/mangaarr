@@ -526,6 +526,29 @@ document.getElementById('modal-mangadb').addEventListener('click', e => {
 </div>
 
 <!-- ── MODAL Édition tome ── -->
+<!-- ── MODAL Choix livraison eMule ── -->
+<div id="modal-delivery" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:1000;align-items:center;justify-content:center">
+  <div style="background:var(--bg-card);border-radius:12px;width:400px;max-width:95vw;border:1px solid var(--border);padding:24px">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+      <h2 style="margin:0;font-size:15px">Envoyer les tomes</h2>
+      <button onclick="document.getElementById('modal-delivery').style.display='none'"
+              style="background:none;border:none;color:var(--text-dim);font-size:20px;cursor:pointer">✕</button>
+    </div>
+    <p id="modal-delivery-info" style="font-size:13px;color:var(--text-dim);margin:0 0 20px"></p>
+    <div style="display:flex;flex-direction:column;gap:10px">
+      <button id="btn-delivery-amule" onclick="confirmDelivery('amule')" class="btn btn-primary"
+              style="background:#1a6b3c;justify-content:center">
+        Envoyer à aMule
+      </button>
+      <button onclick="confirmDelivery('emulecollection')" class="btn btn-primary"
+              style="justify-content:center">
+        Générer .emulecollection
+      </button>
+    </div>
+    <div id="modal-delivery-status" class="status-msg" style="margin-top:12px;text-align:center"></div>
+  </div>
+</div>
+
 <div id="modal-tome-edit" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:1000;align-items:center;justify-content:center">
   <div style="background:var(--bg-card);border-radius:12px;width:500px;max-width:95vw;border:1px solid var(--border);padding:24px">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
@@ -648,25 +671,56 @@ async function searchTomesOnEbdz(auto = false) {
   }).join('');
 }
 
+let _pendingTomes = [];
+
 async function addSelectedTomes() {
-  const status = document.getElementById('tome-search-status');
   const checkboxes = document.querySelectorAll('#tome-search-results input[type=checkbox]:checked');
   if (!checkboxes.length) return;
 
-  const tomes = [...checkboxes].map(cb => _searchedTomesMap[cb.value]).filter(Boolean);
+  _pendingTomes = [...checkboxes].map(cb => _searchedTomesMap[cb.value]).filter(Boolean);
+
+  // Vérifie si aMule est disponible
+  const amuleCheck = await fetch('/api/amule/available').then(r => r.json()).catch(() => ({available: false}));
+
+  if (amuleCheck.available) {
+    // Affiche la modale de choix
+    const count = _pendingTomes.length;
+    document.getElementById('modal-delivery-info').textContent =
+      `${count} tome${count > 1 ? 's' : ''} sélectionné${count > 1 ? 's' : ''} — comment voulez-vous les envoyer ?`;
+    document.getElementById('modal-delivery-status').textContent = '';
+    document.getElementById('modal-delivery').style.display = 'flex';
+  } else {
+    // Pas d'aMule : comportement classique
+    await _doAddTomes('emulecollection');
+  }
+}
+
+async function confirmDelivery(delivery) {
+  const statusEl = document.getElementById('modal-delivery-status');
+  const btns = document.querySelectorAll('#modal-delivery button.btn');
+  btns.forEach(b => b.disabled = true);
+  statusEl.textContent = delivery === 'amule' ? 'Envoi à aMule…' : 'Génération…';
+  statusEl.style.color = 'var(--text-dim)';
+
+  await _doAddTomes(delivery);
+  document.getElementById('modal-delivery').style.display = 'none';
+  btns.forEach(b => b.disabled = false);
+}
+
+async function _doAddTomes(delivery) {
+  const status = document.getElementById('tome-search-status');
   status.textContent = 'Ajout en cours…';
 
   const d = await fetch(`/api/collection/series/${SERIES_SLUG}/add-tomes`, {
     method: 'POST',
     headers: {'Content-Type':'application/json'},
-    body: JSON.stringify({tomes})
-  }).then(r => r.json()).catch(() => ({ok:false, message:'Erreur réseau'}));
+    body: JSON.stringify({ tomes: _pendingTomes, delivery })
+  }).then(r => r.json()).catch(() => ({ok: false, message: 'Erreur réseau'}));
 
   status.textContent = d.message || (d.ok ? 'Ajouté ✓' : 'Erreur');
   status.style.color = d.ok ? 'var(--success)' : 'var(--danger)';
   if (d.ok) {
     _selectedTomes.clear();
-    // Déclenche le téléchargement automatique du .emulecollection
     if (d.file && d.download) {
       const a = document.createElement('a');
       a.href     = `/api/queue/collections/${encodeURIComponent(d.file)}`;
