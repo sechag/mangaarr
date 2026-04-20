@@ -57,9 +57,10 @@ def get_queue() -> list:
         return _load()
 
 def get_queue_stats() -> dict:
-    items = get_queue()
-    ebdz    = [i for i in items if i.get("source", "ebdz") != "torrent"]
-    torrent = [i for i in items if i.get("source") == "torrent"]
+    items    = get_queue()
+    ebdz     = [i for i in items if i.get("source", "ebdz") not in ("torrent", "telegram")]
+    torrent  = [i for i in items if i.get("source") == "torrent"]
+    telegram = [i for i in items if i.get("source") == "telegram"]
     return {
         "total":        len(items),
         "pending":      sum(1 for i in items if i.get("status") == "pending"),
@@ -69,6 +70,10 @@ def get_queue_stats() -> dict:
         "torrent_total": len(torrent),
         "torrent_pending": sum(1 for i in torrent if i.get("status") == "pending"),
         "torrent_done":    sum(1 for i in torrent if i.get("status") == "done"),
+        "telegram_total":   len(telegram),
+        "telegram_pending": sum(1 for i in telegram if i.get("status") == "pending"),
+        "telegram_downloading": sum(1 for i in telegram if i.get("status") == "downloading"),
+        "telegram_done":    sum(1 for i in telegram if i.get("status") == "done"),
     }
 
 def add_to_queue(items: list) -> dict:
@@ -178,8 +183,9 @@ def remove_done(older_than_days: int = 7, source_filter: str = None):
             is_done   = i.get("status") == "done"
             is_old    = i.get("done_at", "9999") < cutoff
             src_match = (source_filter is None
-                         or (source_filter == "torrent" and i.get("source") == "torrent")
-                         or (source_filter == "ebdz"    and i.get("source", "ebdz") != "torrent"))
+                         or (source_filter == "torrent"  and i.get("source") == "torrent")
+                         or (source_filter == "telegram" and i.get("source") == "telegram")
+                         or (source_filter == "ebdz"     and i.get("source", "ebdz") not in ("torrent", "telegram")))
             if is_done and is_old and src_match:
                 continue  # supprime
             kept.append(i)

@@ -22,10 +22,15 @@ import library_manager as lib_mgr
 import torznab_client, qbittorrent_client, amule_client
 import discover_manager
 import ebdz_browser
+import telegram_client
 
 # Dossier de stockage des fichiers .torrent téléchargés
 TORRENT_FILES_DIR = os.environ.get("MANGAARR_TORRENT_FILES", "/torrent_files")
 os.makedirs(TORRENT_FILES_DIR, exist_ok=True)
+
+# Dossier de téléchargement Telegram
+TELEGRAM_WATCH_DIR = os.environ.get("MANGAARR_TELEGRAM_WATCH", "/telegram")
+os.makedirs(TELEGRAM_WATCH_DIR, exist_ok=True)
 
 from flask import Flask, jsonify, request, render_template, Response
 
@@ -612,6 +617,327 @@ def api_torrent_scan_incoming():
         })
     result = _tw.do_scan_torrent_incoming(watch_path)
     return jsonify(result)
+
+
+# ════════════════════════════════════════════════════════
+# TELEGRAM — Indexers
+# ════════════════════════════════════════════════════════
+
+def _get_telegram_indexer(idx_id: str = None) -> dict | None:
+    """Retourne le premier indexer Telegram actif, ou celui dont l'id correspond."""
+    indexers = config.get("telegram_indexers", [])
+    if idx_id:
+        return next((i for i in indexers if i.get("id") == idx_id), None)
+    return next((i for i in indexers if i.get("enabled", True)), None)
+
+
+@app.route("/api/indexers/telegram", methods=["GET"])
+def api_list_telegram():
+    indexers = config.get("telegram_indexers", [])
+    safe = []
+    for idx in indexers:
+        s = dict(idx)
+        s.pop("session_string", None)
+        s.pop("api_hash", None)
+        safe.append(s)
+    return jsonify({"ok": True, "indexers": safe})
+
+
+@app.route("/api/indexers/telegram", methods=["POST"])
+def api_add_telegram():
+    d       = request.json or {}
+    api_id  = str(d.get("api_id", "")).strip()
+    api_hash = d.get("api_hash", "").strip()
+    phone   = d.get("phone", "").strip()
+    name    = d.get("name", "Telegram").strip()
+
+    if not api_id or not api_hash or not phone:
+        return jsonify({"ok": False, "message": "api_id, api_hash et phone requis"})
+
+    cfg = config.load()
+    idx = {
+        "id":             str(uuid.uuid4())[:8],
+        "name":           name,
+        "api_id":         api_id,
+        "api_hash":       api_hash,
+        "phone":          phone,
+        "session_string": "",
+        "channels":       [],   # [{id, name, enabled}]
+        "enabled":        True,
+    }
+    cfg.setdefault("telegram_indexers", []).append(idx)
+    config.save(cfg)
+    safe = {k: v for k, v in idx.items() if k not in ("session_string", "api_hash")}
+    return jsonify({"ok": True, "indexer": safe})
+
+
+@app.route("/api/indexers/telegram/<idx_id>", methods=["DELETE"])
+def api_delete_telegram(idx_id):
+    cfg = config.load()
+    cfg["telegram_indexers"] = [i for i in cfg.get("telegram_indexers", []) if i.get("id") != idx_id]
+    config.save(cfg)
+    return jsonify({"ok": True})
+
+
+@app.route("/api/indexers/telegram/<idx_id>", methods=["PATCH"])
+def api_update_telegram(idx_id):
+    d   = request.json or {}
+    cfg = config.load()
+    for idx in cfg.get("telegram_indexers", []):
+        if idx.get("id") == idx_id:
+            for k in ("name", "phone", "enabled", "channels"):
+                if k in d:
+                    idx[k] = d[k]
+            if "api_id" in d:
+                idx["api_id"] = str(d["api_id"])
+            if "api_hash" in d and d["api_hash"] not in ("", "••••••••"):
+                idx["api_hash"] = d["api_hash"]
+    config.save(cfg)
+    return jsonify({"ok": True})
+
+
+@app.route("/api/indexers/telegram/<idx_id>/send-code", methods=["POST"])
+def api_telegram_send_code(idx_id):
+    """Étape 1 : envoie le code de vérification au téléphone."""
+    idx = _get_telegram_indexer(idx_id)
+    if not idx:
+        return jsonify({"ok": False, "message": "Indexer introuvable"})
+    result = telegram_client.send_code(idx)
+    return jsonify(result)
+
+
+@app.route("/api/indexers/telegram/<idx_id>/sign-in", methods=["POST"])
+def api_telegram_sign_in(idx_id):
+    """Étape 2 : valide le code reçu et sauvegarde la session."""
+    idx = _get_telegram_indexer(idx_id)
+    if not idx:
+        return jsonify({"ok": False, "message": "Indexer introuvable"})
+
+    d        = request.json or {}
+    code     = d.get("code", "").strip()
+    password = d.get("password", "").strip()
+
+    if not code:
+        return jsonify({"ok": False, "message": "Code manquant"})
+
+    result = telegram_client.sign_in(idx, code, password)
+    if result.get("ok"):
+        cfg = config.load()
+        for i in cfg.get("telegram_indexers", []):
+            if i.get("id") == idx_id:
+                i["session_string"] = result["session_string"]
+                break
+        config.save(cfg)
+        return jsonify({"ok": True, "message": f"Connecté : {result.get('name','?')}"})
+    return jsonify(result)
+
+
+@app.route("/api/indexers/telegram/<idx_id>/test", methods=["POST"])
+def api_test_telegram(idx_id):
+    idx = _get_telegram_indexer(idx_id)
+    if not idx:
+        return jsonify({"ok": False, "message": "Indexer introuvable"})
+    return jsonify(telegram_client.test_connection(idx))
+
+
+@app.route("/api/indexers/telegram/<idx_id>/channels", methods=["GET"])
+def api_telegram_channels(idx_id):
+    """Liste les canaux dont l'utilisateur est membre."""
+    idx = _get_telegram_indexer(idx_id)
+    if not idx:
+        return jsonify({"ok": False, "message": "Indexer introuvable", "channels": []})
+    return jsonify(telegram_client.get_channels(idx))
+
+
+@app.route("/api/indexers/telegram/<idx_id>/channels", methods=["POST"])
+def api_telegram_save_channels(idx_id):
+    """Sauvegarde la sélection de canaux pour un indexer."""
+    d        = request.json or {}
+    channels = d.get("channels", [])
+    cfg      = config.load()
+    for i in cfg.get("telegram_indexers", []):
+        if i.get("id") == idx_id:
+            i["channels"] = channels
+            break
+    config.save(cfg)
+    return jsonify({"ok": True})
+
+
+# ════════════════════════════════════════════════════════
+# TELEGRAM — Recherche sur page série
+# ════════════════════════════════════════════════════════
+
+@app.route("/api/collection/series/<path:series_slug>/telegram-search")
+def api_telegram_search(series_slug):
+    """
+    Recherche des fichiers Telegram pour une série.
+    Cherche dans les canaux sélectionnés de l'indexer actif.
+    """
+    series_info = lib_mgr.resolve_slug(series_slug)
+    if not series_info:
+        return jsonify({"ok": False, "message": "Série introuvable", "files": []})
+
+    q   = request.args.get("q", series_info["name"]).strip()
+    idx = _get_telegram_indexer()
+
+    if not idx:
+        return jsonify({"ok": False, "message": "Aucun indexer Telegram configuré (Indexers > Telegram)", "files": []})
+
+    if not idx.get("session_string"):
+        return jsonify({"ok": False, "message": "Indexer Telegram non authentifié", "files": []})
+
+    # Canaux actifs
+    channel_ids = [c["id"] for c in idx.get("channels", []) if c.get("enabled", True)]
+    if not channel_ids:
+        return jsonify({"ok": False, "message": "Aucun canal Telegram sélectionné (Indexers > Telegram)", "files": []})
+
+    result = telegram_client.search_files(idx, q, channel_ids)
+    if not result.get("ok"):
+        return jsonify(result)
+
+    # Enrichit avec infos owned/queue
+    tomes_owned  = {t["numero"] for t in series_info.get("tomes", []) if t.get("numero")}
+    tomes_by_num = {t["numero"]: t.get("filename", "") for t in series_info.get("tomes", []) if t.get("numero")}
+    queue_hashes = {i.get("filehash") for i in queue_manager.get_queue()}
+
+    files = []
+    for f in result["files"]:
+        n          = f.get("tome_number")
+        owned      = n is not None and n in tomes_owned
+        owned_file = tomes_by_num.get(n, "") if owned else ""
+        files.append({
+            **f,
+            "owned":      owned,
+            "owned_file": owned_file,
+            "in_queue":   f["filehash"] in queue_hashes,
+        })
+
+    return jsonify({
+        "ok":          True,
+        "query":       q,
+        "files":       files,
+        "owned_tomes": sorted(tomes_owned),
+    })
+
+
+# ════════════════════════════════════════════════════════
+# TELEGRAM — Téléchargement
+# ════════════════════════════════════════════════════════
+
+@app.route("/api/telegram/download", methods=["POST"])
+def api_telegram_download():
+    """
+    Lance le téléchargement des fichiers Telegram sélectionnés et les ajoute à la queue.
+    Body : {series_slug, series_name, files: [{filename, filehash, message_id, channel_id,
+            channel_name, tome_number, tome_str, tag, size, owned_file}]}
+    """
+    d           = request.json or {}
+    series_slug = d.get("series_slug", "")
+    series_name = d.get("series_name", "")
+    files       = d.get("files", [])
+
+    if not files:
+        return jsonify({"ok": False, "message": "Aucun fichier fourni"})
+
+    idx = _get_telegram_indexer()
+    if not idx:
+        return jsonify({"ok": False, "message": "Aucun indexer Telegram configuré"})
+    if not idx.get("session_string"):
+        return jsonify({"ok": False, "message": "Indexer Telegram non authentifié"})
+
+    series_info = lib_mgr.resolve_slug(series_slug) if series_slug else None
+    if series_info:
+        series_name = series_info["name"]
+
+    now     = __import__("datetime").datetime.now().isoformat(timespec="seconds")
+    added   = []
+    errors  = []
+
+    for f in files:
+        filename   = f.get("filename", "")
+        filehash   = f.get("filehash", "")
+        message_id = int(f.get("message_id", 0))
+        channel_id = str(f.get("channel_id", ""))
+        tome_num   = f.get("tome_number")
+        tome_str   = f.get("tome_str", f"T{tome_num:02d}" if tome_num else "?")
+        tag        = f.get("tag", "Notag")
+        owned_file = f.get("owned_file", "")
+        action     = "upgrade" if owned_file else "missing"
+
+        if not filename or not filehash or not message_id:
+            errors.append(f"Données manquantes pour : {filename}")
+            continue
+
+        item = {
+            "source":      "telegram",
+            "filename":    filename,
+            "filehash":    filehash,
+            "series_name": series_name,
+            "series_slug": series_slug,
+            "tome_number": tome_str,
+            "tomes":       [tome_num] if tome_num else [],
+            "tag":         tag,
+            "action":      action,
+            "owned_file":  owned_file,
+            "status":      "pending",
+            "added_at":    now,
+            "message_id":  message_id,
+            "channel_id":  channel_id,
+        }
+
+        res = queue_manager.add_to_queue([item])
+        if res["added"] == 0:
+            errors.append(f"{filename} : doublon ignoré")
+            continue
+
+        # Lance le téléchargement en arrière-plan
+        dest_dir = os.environ.get("MANGAARR_TELEGRAM_WATCH", "/telegram")
+        tg_result = telegram_client.start_download(
+            idx, message_id, channel_id, dest_dir, filename, filehash
+        )
+        if tg_result.get("ok"):
+            added.append(filename)
+            config.add_log(f"[Telegram] Téléchargement démarré : {filename}", "info")
+        else:
+            errors.append(f"{filename} : {tg_result.get('message','Erreur')}")
+
+    return jsonify({
+        "ok":     len(added) > 0,
+        "added":  len(added),
+        "errors": errors,
+        "message": f"{len(added)} fichier(s) en cours de téléchargement" +
+                   (f", {len(errors)} erreur(s)" if errors else ""),
+    })
+
+
+@app.route("/api/telegram/queue")
+def api_telegram_queue():
+    """Retourne les items Telegram de la queue."""
+    items = [i for i in queue_manager.get_queue() if i.get("source") == "telegram"]
+    items.sort(key=lambda x: (x.get("status") == "done", x.get("added_at", "")))
+    return jsonify({"ok": True, "items": items, "total": len(items)})
+
+
+@app.route("/api/telegram/scan-incoming")
+def api_telegram_scan_incoming():
+    """Déclenche manuellement le scan du dossier Telegram."""
+    import telegram_watcher as _tw
+    watch_path = _tw.get_watch_path()
+    if not watch_path:
+        return jsonify({
+            "ok": False,
+            "message": "MANGAARR_TELEGRAM_WATCH non défini dans docker-compose.yml",
+            "updated": 0,
+        })
+    result = _tw.do_scan_telegram_incoming(watch_path)
+    return jsonify(result)
+
+
+@app.route("/api/telegram/clear-done", methods=["POST"])
+def api_telegram_clear_done():
+    """Supprime les items Telegram terminés de la queue."""
+    queue_manager.remove_done(older_than_days=0, source_filter="telegram")
+    return jsonify({"ok": True})
 
 
 # ════════════════════════════════════════════════════════
@@ -3165,6 +3491,10 @@ if __name__ == "__main__":
     # Watcher torrents qBittorrent — traitement automatique des téléchargements terminés
     import torrent_watcher as _tw
     _tw.start_watcher()
+
+    # Watcher Telegram — filet de sécurité pour fichiers dans /telegram
+    import telegram_watcher as _tgw
+    _tgw.start_watcher()
 
     app.run(host="0.0.0.0", port=port, debug=False, threaded=True)
 

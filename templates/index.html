@@ -150,8 +150,9 @@
     <div class="page-header">
       <h1>Indexers</h1>
       <div class="tab-pills" style="display:flex;gap:4px">
-        <button id="tab-idx-ebdz"    class="tab-pill active" onclick="switchIndexerTab('ebdz')">ebdz.net</button>
-        <button id="tab-idx-torznab" class="tab-pill"        onclick="switchIndexerTab('torznab')">Torznab</button>
+        <button id="tab-idx-ebdz"     class="tab-pill active" onclick="switchIndexerTab('ebdz')">ebdz.net</button>
+        <button id="tab-idx-torznab"  class="tab-pill"        onclick="switchIndexerTab('torznab')">Torznab</button>
+        <button id="tab-idx-telegram" class="tab-pill"        onclick="switchIndexerTab('telegram')">Telegram</button>
       </div>
     </div>
 
@@ -209,6 +210,72 @@
           <span id="process-status" class="status-msg"></span>
         </div>
         <div id="process-results" class="results-list"></div>
+      </div>
+    </div>
+
+    <!-- ── Onglet Telegram ── -->
+    <div id="indexer-panel-telegram" style="display:none">
+      <div class="settings-card">
+        <h2>Telegram — Connexion</h2>
+        <p class="hint">Obtenez votre <strong>api_id</strong> et <strong>api_hash</strong> sur <a href="https://my.telegram.org" target="_blank" style="color:var(--accent)">my.telegram.org</a> → Apps.</p>
+        <div class="form-row">
+          <label>Nom</label>
+          <input type="text" id="tg-name" class="text-input" value="Telegram" placeholder="ex: Mon Telegram">
+        </div>
+        <div class="form-row">
+          <label>API ID</label>
+          <input type="text" id="tg-api-id" class="text-input" placeholder="12345678">
+        </div>
+        <div class="form-row">
+          <label>API Hash</label>
+          <input type="password" id="tg-api-hash" class="text-input" placeholder="abc123def456…">
+        </div>
+        <div class="form-row">
+          <label>Téléphone</label>
+          <input type="text" id="tg-phone" class="text-input" placeholder="+33612345678">
+        </div>
+        <div class="form-actions">
+          <button class="btn btn-primary" onclick="addTelegramIndexer()">Enregistrer &amp; Envoyer le code</button>
+          <span id="tg-add-status" class="status-msg"></span>
+        </div>
+      </div>
+
+      <!-- Validation du code -->
+      <div class="settings-card" id="tg-auth-card" style="display:none">
+        <h2>Validation du code</h2>
+        <p class="hint">Entrez le code reçu par Telegram (SMS ou message Telegram).</p>
+        <div class="form-row">
+          <label>Code</label>
+          <input type="text" id="tg-code" class="text-input" placeholder="12345" maxlength="10">
+        </div>
+        <div class="form-row" id="tg-2fa-row" style="display:none">
+          <label>Mot de passe 2FA</label>
+          <input type="password" id="tg-2fa-pwd" class="text-input" placeholder="Votre mot de passe Telegram">
+        </div>
+        <div class="form-actions">
+          <button class="btn btn-primary" onclick="signInTelegram()">Valider</button>
+          <span id="tg-auth-status" class="status-msg"></span>
+        </div>
+      </div>
+
+      <!-- Indexers configurés -->
+      <div class="settings-card">
+        <h2>Indexers Telegram configurés</h2>
+        <div id="telegram-indexers-list">
+          <p style="color:var(--text-dim);font-size:12px">Chargement…</p>
+        </div>
+      </div>
+
+      <!-- Sélection des canaux -->
+      <div class="settings-card" id="tg-channels-card" style="display:none">
+        <h2>Sélection des canaux</h2>
+        <p class="hint">Sélectionnez les canaux où MangaArr cherchera des fichiers.</p>
+        <div style="margin-bottom:10px;display:flex;gap:8px">
+          <button class="btn btn-secondary btn-sm" onclick="refreshTelegramChannels()">↺ Actualiser la liste</button>
+          <button class="btn btn-primary btn-sm" onclick="saveTelegramChannels()">Sauvegarder la sélection</button>
+          <span id="tg-channels-status" class="status-msg" style="font-size:12px"></span>
+        </div>
+        <div id="tg-channels-list" style="max-height:400px;overflow-y:auto"></div>
       </div>
     </div>
 
@@ -547,8 +614,9 @@
       <h1>Activity — Queue</h1>
       <div class="header-actions">
         <div class="tab-pills" style="display:flex;gap:4px;margin-right:8px">
-          <button id="tab-queue-emule"   class="tab-pill active" onclick="switchQueueTab('emule')">eMule</button>
-          <button id="tab-queue-torrent" class="tab-pill"        onclick="switchQueueTab('torrent')">Torrent <span id="torrent-queue-badge" class="nav-badge" style="display:none;background:var(--accent);color:#000">0</span></button>
+          <button id="tab-queue-emule"    class="tab-pill active" onclick="switchQueueTab('emule')">eMule</button>
+          <button id="tab-queue-torrent"  class="tab-pill"        onclick="switchQueueTab('torrent')">Torrent <span id="torrent-queue-badge" class="nav-badge" style="display:none;background:var(--accent);color:#000">0</span></button>
+          <button id="tab-queue-telegram" class="tab-pill"        onclick="switchQueueTab('telegram')">Telegram <span id="telegram-queue-badge" class="nav-badge" style="display:none;background:#0088cc;color:#fff">0</span></button>
         </div>
         <span id="queue-dest-label" class="status-msg" style="font-size:11px;color:var(--text-dim)"></span>
       </div>
@@ -686,6 +754,42 @@
           Ouvrir la page Découverte →
         </a>
       </div>
+    </div>
+
+    <!-- ══ Onglet Telegram ══ -->
+    <div id="queue-panel-telegram" style="display:none">
+      <div class="search-bar-wrap">
+        <div class="collection-controls" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+          <input type="text" id="telegram-queue-search" class="search-input" placeholder="Filtrer par série…" oninput="filterTelegramQueueTable()">
+          <button class="btn btn-primary" onclick="scanTelegramIncoming(this)">
+            <svg viewBox="0 0 20 20" fill="currentColor" style="width:14px;height:14px"><path fill-rule="evenodd" d="M4 2a1 1 0 011 1v2.101a7.002 7.002 0 0111.601 2.566 1 1 0 11-1.885.666A5.002 5.002 0 005.999 7H9a1 1 0 010 2H4a1 1 0 01-1-1V3a1 1 0 011-1zm.008 9.057a1 1 0 011.276.61A5.002 5.002 0 0014.001 13H11a1 1 0 110-2h5a1 1 0 011 1v5a1 1 0 11-2 0v-2.101a7.002 7.002 0 01-11.601-2.566 1 1 0 01.61-1.276z" clip-rule="evenodd"/></svg>
+            Scanner maintenant
+          </button>
+          <span id="telegram-scan-status" class="status-msg" style="font-size:12px"></span>
+          <button class="btn btn-danger btn-sm" onclick="clearTelegramQueue()">Purger terminés</button>
+          <button class="btn btn-danger btn-sm" id="btn-delete-telegram" style="display:none" onclick="deleteSelectedTelegram()">
+            <svg viewBox="0 0 20 20" fill="currentColor" style="width:13px;height:13px"><path fill-rule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clip-rule="evenodd"/></svg>
+            Supprimer sélectionnés
+          </button>
+        </div>
+      </div>
+      <div id="telegram-queue-stats" class="queue-stats-bar"></div>
+      <div class="queue-table-wrap">
+        <table class="queue-table">
+          <thead>
+            <tr>
+              <th style="width:30px"><input type="checkbox" id="telegram-select-all" onchange="toggleSelectAllTelegram(this)" title="Tout sélectionner"></th>
+              <th class="queue-th-sortable" onclick="sortTelegramQueueBy('series')" style="cursor:pointer;user-select:none">Série <span id="telegram-sort-icon">↕</span></th>
+              <th>Fichier</th><th>Tome</th><th>Tag</th><th>Canal</th><th>Progression</th>
+            </tr>
+          </thead>
+          <tbody id="telegram-queue-tbody"></tbody>
+        </table>
+        <div id="telegram-queue-empty" class="empty-state" style="display:none">
+          <p>Aucun téléchargement Telegram en queue.<br>Utilisez le bouton <strong>Telegram</strong> sur une page de série.</p>
+        </div>
+      </div>
+      <div id="telegram-queue-pagination" class="pagination"></div>
     </div>
 
     <!-- ══ Onglet Surveillance ══ -->

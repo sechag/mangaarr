@@ -33,6 +33,9 @@ services:
       # ── Fichiers .torrent téléchargés par MangaArr avant envoi à qBittorrent
       - /chemin/vers/torrent_files:/torrent_files:rw
 
+      # ── Dossier de téléchargement Telegram (LECTURE/ÉCRITURE)
+      - /chemin/vers/telegram_downloads:/telegram:rw
+
     environment:
       - MANGAARR_PORT=7474
       - MANGAARR_CONFIG=/data/config/config.json
@@ -52,5 +55,8 @@ services:
 
       # ── Dossier de stockage des .torrent téléchargés
       - MANGAARR_TORRENT_FILES=/torrent_files
+
+      # ── Dossier de téléchargement Telegram (doit correspondre au volume /telegram)
+      - MANGAARR_TELEGRAM_WATCH=/telegram
 
       - TZ=Europe/Paris

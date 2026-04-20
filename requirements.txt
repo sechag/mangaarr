@@ -4,6 +4,7 @@ requests>=2.31
 beautifulsoup4>=4.12
 pandas>=1.5
 Pillow>=9.0        # compression WebP des covers (image_cache.py)
+telethon>=1.34     # Client Telegram MTProto (indexer Telegram)
 
 # Outils système (apt/pacman) :
 # CBR → CBZ  : unrar-free  (ou p7zip-full)

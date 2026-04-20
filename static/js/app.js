@@ -2128,11 +2128,14 @@ let _indexerTab = 'ebdz';
 
 function switchIndexerTab(tab) {
   _indexerTab = tab;
-  document.getElementById('indexer-panel-ebdz').style.display    = tab === 'ebdz'    ? '' : 'none';
-  document.getElementById('indexer-panel-torznab').style.display = tab === 'torznab' ? '' : 'none';
-  document.getElementById('tab-idx-ebdz').classList.toggle('active',    tab === 'ebdz');
-  document.getElementById('tab-idx-torznab').classList.toggle('active', tab === 'torznab');
-  if (tab === 'torznab') loadTorznabIndexers();
+  ['ebdz', 'torznab', 'telegram'].forEach(t => {
+    const panel = document.getElementById(`indexer-panel-${t}`);
+    const btn   = document.getElementById(`tab-idx-${t}`);
+    if (panel) panel.style.display = t === tab ? '' : 'none';
+    if (btn)   btn.classList.toggle('active', t === tab);
+  });
+  if (tab === 'torznab')  loadTorznabIndexers();
+  if (tab === 'telegram') loadTelegramIndexers();
 }
 
 // ══════════════════════════════════════════════════════════
@@ -2337,14 +2340,15 @@ let _queueActiveTab = 'emule';
 
 function switchQueueTab(tab) {
   _queueActiveTab = tab;
-  ['emule', 'torrent', 'monitor'].forEach(t => {
+  ['emule', 'torrent', 'telegram', 'monitor'].forEach(t => {
     const panel = document.getElementById(`queue-panel-${t}`);
     const btn   = document.getElementById(`tab-queue-${t}`);
     if (panel) panel.style.display = t === tab ? '' : 'none';
     if (btn)   btn.classList.toggle('active', t === tab);
   });
-  if (tab === 'torrent') loadTorrentQueue();
-  if (tab === 'monitor') { /* user clicks "Analyser" manually */ }
+  if (tab === 'torrent')  loadTorrentQueue();
+  if (tab === 'telegram') loadTelegramQueue();
+  if (tab === 'monitor')  { /* user clicks "Analyser" manually */ }
 }
 
 // ── Queue Torrent ──
@@ -2994,6 +2998,326 @@ async function scanTorrentIncoming(btn) {
     setTimeout(() => { if (status) status.textContent = ''; }, 4000);
   }
   loadTorrentQueue();
+}
+
+// ════════════════════════════════════════════════
+// TELEGRAM — Indexers
+// ════════════════════════════════════════════════
+
+let _telegramCurrentIdx = null;
+
+async function loadTelegramIndexers() {
+  const list = document.getElementById('telegram-indexers-list');
+  if (!list) return;
+  const d = await api('/indexers/telegram');
+  const indexers = d.indexers || [];
+  if (!indexers.length) {
+    list.innerHTML = '<p style="color:var(--text-dim);font-size:12px">Aucun indexer configuré.</p>';
+    document.getElementById('tg-channels-card').style.display = 'none';
+    return;
+  }
+  list.innerHTML = indexers.map(idx => {
+    const auth = idx.session_string ? '✓ Authentifié' : '⚠ Non authentifié';
+    const authColor = idx.session_string ? 'var(--success)' : 'var(--warning, #f59e0b)';
+    return `<div class="indexer-card">
+      <div class="indexer-card-info">
+        <div class="indexer-card-name">${esc(idx.name)}</div>
+        <div class="indexer-card-url" style="color:${authColor}">${auth} — ${esc(idx.phone || '')}</div>
+      </div>
+      <div class="indexer-card-actions">
+        <label class="toggle" title="${idx.enabled ? 'Actif' : 'Désactivé'}">
+          <input type="checkbox" ${idx.enabled ? 'checked' : ''}
+                 onchange="toggleTelegramIndexer('${esc(idx.id)}', this.checked)">
+          <span class="toggle-slider"></span>
+        </label>
+        <button class="btn btn-sm btn-secondary" onclick="testTelegramIndexer('${esc(idx.id)}', this)">Tester</button>
+        <button class="btn btn-sm btn-secondary" onclick="openTelegramChannels('${esc(idx.id)}')">Canaux</button>
+        <button class="btn btn-sm btn-danger"    onclick="deleteTelegramIndexer('${esc(idx.id)}')">✕</button>
+      </div>
+    </div>`;
+  }).join('');
+
+  // Ouvre la sélection de canaux pour le premier indexer actif si déjà auth
+  const active = indexers.find(i => i.enabled && i.session_string);
+  if (active) openTelegramChannels(active.id, false);
+}
+
+async function addTelegramIndexer() {
+  const status  = document.getElementById('tg-add-status');
+  const api_id  = document.getElementById('tg-api-id').value.trim();
+  const api_hash = document.getElementById('tg-api-hash').value.trim();
+  const phone   = document.getElementById('tg-phone').value.trim();
+  const name    = document.getElementById('tg-name').value.trim() || 'Telegram';
+
+  if (!api_id || !api_hash || !phone) {
+    status.textContent = 'api_id, api_hash et téléphone requis'; status.style.color = 'var(--danger)';
+    return;
+  }
+  status.textContent = 'Enregistrement…'; status.style.color = 'var(--text-dim)';
+
+  const d = await api('/indexers/telegram', 'POST', { name, api_id, api_hash, phone });
+  if (!d.ok) {
+    status.textContent = d.message || 'Erreur'; status.style.color = 'var(--danger)';
+    return;
+  }
+  _telegramCurrentIdx = d.indexer.id;
+
+  // Envoie le code de vérification
+  status.textContent = 'Envoi du code SMS/Telegram…'; status.style.color = 'var(--text-dim)';
+  const r = await api(`/indexers/telegram/${_telegramCurrentIdx}/send-code`, 'POST');
+  if (r.ok) {
+    status.textContent = '✓ Code envoyé !'; status.style.color = 'var(--success)';
+    document.getElementById('tg-auth-card').style.display = '';
+    document.getElementById('tg-code').focus();
+  } else {
+    status.textContent = r.message || 'Erreur envoi code'; status.style.color = 'var(--danger)';
+  }
+  loadTelegramIndexers();
+}
+
+async function signInTelegram() {
+  const status = document.getElementById('tg-auth-status');
+  const code   = document.getElementById('tg-code').value.trim();
+  const pwd    = document.getElementById('tg-2fa-pwd').value.trim();
+  if (!code) { status.textContent = 'Code manquant'; status.style.color = 'var(--danger)'; return; }
+
+  status.textContent = 'Validation…'; status.style.color = 'var(--text-dim)';
+  const d = await api(`/indexers/telegram/${_telegramCurrentIdx}/sign-in`, 'POST', { code, password: pwd });
+
+  if (d.need_2fa) {
+    document.getElementById('tg-2fa-row').style.display = '';
+    status.textContent = '2FA requis — entrez votre mot de passe Telegram'; status.style.color = 'var(--warning, #f59e0b)';
+    return;
+  }
+  if (d.ok) {
+    status.textContent = d.message || '✓ Connecté !'; status.style.color = 'var(--success)';
+    document.getElementById('tg-auth-card').style.display = 'none';
+    document.getElementById('tg-code').value = '';
+    document.getElementById('tg-2fa-pwd').value = '';
+    loadTelegramIndexers();
+  } else {
+    status.textContent = d.message || 'Erreur'; status.style.color = 'var(--danger)';
+  }
+}
+
+async function testTelegramIndexer(id, btn) {
+  if (btn) btn.disabled = true;
+  const d = await api(`/indexers/telegram/${id}/test`, 'POST');
+  if (btn) { btn.disabled = false; btn.textContent = d.ok ? '✓' : '✗'; }
+  setTimeout(() => { if (btn) btn.textContent = 'Tester'; }, 3000);
+  alert(d.message || (d.ok ? 'OK' : 'Erreur'));
+}
+
+async function toggleTelegramIndexer(id, enabled) {
+  await api(`/indexers/telegram/${id}`, 'PATCH', { enabled });
+}
+
+async function deleteTelegramIndexer(id) {
+  if (!confirm('Supprimer cet indexer Telegram ?')) return;
+  await api(`/indexers/telegram/${id}`, 'DELETE');
+  loadTelegramIndexers();
+}
+
+async function openTelegramChannels(id, doRefresh = true) {
+  _telegramCurrentIdx = id;
+  const card = document.getElementById('tg-channels-card');
+  if (!card) return;
+  card.style.display = '';
+  if (doRefresh) refreshTelegramChannels();
+  else _loadSavedChannels(id);
+}
+
+async function _loadSavedChannels(id) {
+  const d = await api('/indexers/telegram');
+  const idx = (d.indexers || []).find(i => i.id === id);
+  if (!idx) return;
+  _renderTelegramChannels(idx.channels || [], idx.channels || []);
+}
+
+async function refreshTelegramChannels() {
+  const status = document.getElementById('tg-channels-status');
+  const list   = document.getElementById('tg-channels-list');
+  if (!_telegramCurrentIdx) return;
+  if (status) { status.textContent = 'Chargement…'; status.style.color = 'var(--text-dim)'; }
+  if (list)   list.innerHTML = '<p style="color:var(--text-dim);font-size:12px">Récupération des canaux…</p>';
+
+  // Canaux déjà sélectionnés
+  const saved = await api('/indexers/telegram');
+  const idx   = (saved.indexers || []).find(i => i.id === _telegramCurrentIdx);
+  const savedChannels = idx ? (idx.channels || []) : [];
+
+  const d = await api(`/indexers/telegram/${_telegramCurrentIdx}/channels`);
+  if (!d.ok) {
+    if (list) list.innerHTML = `<p style="color:var(--danger);font-size:12px">${esc(d.message || 'Erreur')}</p>`;
+    if (status) status.textContent = '';
+    return;
+  }
+  if (status) status.textContent = `${d.channels.length} canal(aux) trouvé(s)`;
+  _renderTelegramChannels(d.channels, savedChannels);
+}
+
+function _renderTelegramChannels(channels, savedChannels) {
+  const list   = document.getElementById('tg-channels-list');
+  if (!list) return;
+  const savedIds = new Set(savedChannels.filter(c => c.enabled).map(c => String(c.id)));
+  if (!channels.length) {
+    list.innerHTML = '<p style="color:var(--text-dim);font-size:12px">Aucun canal trouvé.</p>';
+    return;
+  }
+  list.innerHTML = channels.map(ch => `
+    <div style="display:flex;align-items:center;gap:10px;padding:6px 0;border-bottom:1px solid var(--border)">
+      <input type="checkbox" id="ch-${esc(ch.id)}" value="${esc(ch.id)}" ${savedIds.has(String(ch.id)) ? 'checked' : ''}>
+      <label for="ch-${esc(ch.id)}" style="flex:1;cursor:pointer;font-size:13px">${esc(ch.name)}</label>
+      <span style="color:var(--text-dim);font-size:11px">${ch.type}</span>
+    </div>`).join('');
+}
+
+async function saveTelegramChannels() {
+  const status = document.getElementById('tg-channels-status');
+  const checkboxes = document.querySelectorAll('#tg-channels-list input[type=checkbox]');
+  const channels = [...checkboxes].map(cb => ({
+    id:      cb.value,
+    name:    cb.nextElementSibling?.textContent?.trim() || cb.value,
+    enabled: cb.checked,
+  }));
+  const d = await api(`/indexers/telegram/${_telegramCurrentIdx}/channels`, 'POST', { channels });
+  if (status) {
+    status.textContent = d.ok ? '✓ Sauvegardé' : (d.message || 'Erreur');
+    status.style.color = d.ok ? 'var(--success)' : 'var(--danger)';
+    setTimeout(() => { if (status) status.textContent = ''; }, 3000);
+  }
+}
+
+// ════════════════════════════════════════════════
+// TELEGRAM — Queue
+// ════════════════════════════════════════════════
+
+let _telegramQueueItems = [];
+let _telegramQueuePage  = 1;
+let _telegramSortDir    = 'asc';
+const TELEGRAM_PAGE_SIZE = 20;
+
+async function loadTelegramQueue() {
+  const d = await api('/telegram/queue');
+  _telegramQueueItems = d.items || [];
+  renderTelegramQueueStats();
+  filterTelegramQueueTable();
+  updateTelegramQueueBadge();
+}
+
+function renderTelegramQueueStats() {
+  const el    = document.getElementById('telegram-queue-stats');
+  if (!el) return;
+  const items = _telegramQueueItems;
+  const pend  = items.filter(i => i.status === 'pending').length;
+  const dl    = items.filter(i => i.status === 'downloading').length;
+  const done  = items.filter(i => i.status === 'done').length;
+  el.innerHTML = `<span>${items.length} total</span><span style="color:var(--accent)">${pend} en attente</span><span style="color:#0088cc">${dl} en cours</span><span style="color:var(--success)">${done} terminés</span>`;
+}
+
+function sortTelegramQueueBy(col) {
+  _telegramSortDir = _telegramSortDir === 'asc' ? 'desc' : 'asc';
+  const icon = document.getElementById('telegram-sort-icon');
+  if (icon) icon.textContent = _telegramSortDir === 'asc' ? '↑' : '↓';
+  _telegramQueueItems.sort((a, b) => {
+    const va = a.series_name || '', vb = b.series_name || '';
+    return _telegramSortDir === 'asc' ? va.localeCompare(vb) : vb.localeCompare(va);
+  });
+  filterTelegramQueueTable();
+}
+
+function filterTelegramQueueTable() {
+  const q     = (document.getElementById('telegram-queue-search')?.value || '').toLowerCase();
+  let items   = [..._telegramQueueItems];
+  if (q) items = items.filter(i => (i.series_name || '').toLowerCase().includes(q));
+  const pages = Math.ceil(items.length / TELEGRAM_PAGE_SIZE) || 1;
+  _telegramQueuePage = Math.max(1, Math.min(_telegramQueuePage, pages));
+  const start = (_telegramQueuePage - 1) * TELEGRAM_PAGE_SIZE;
+  renderTelegramQueueTable(items.slice(start, start + TELEGRAM_PAGE_SIZE));
+
+  const pg = document.getElementById('telegram-queue-pagination');
+  if (pg && pages > 1) {
+    let ph = `<button class="page-btn" onclick="_telegramQueuePage=Math.max(1,_telegramQueuePage-1);filterTelegramQueueTable()" ${_telegramQueuePage===1?'disabled':''}>‹</button>`;
+    for (let i = 1; i <= pages; i++)
+      ph += `<button class="page-btn ${i===_telegramQueuePage?'active':''}" onclick="_telegramQueuePage=${i};filterTelegramQueueTable()">${i}</button>`;
+    ph += `<button class="page-btn" onclick="_telegramQueuePage=Math.min(${pages},_telegramQueuePage+1);filterTelegramQueueTable()" ${_telegramQueuePage===pages?'disabled':''}>›</button>`;
+    pg.innerHTML = ph;
+  } else if (pg) pg.innerHTML = '';
+}
+
+function renderTelegramQueueTable(items) {
+  const tbody = document.getElementById('telegram-queue-tbody');
+  const empty = document.getElementById('telegram-queue-empty');
+  if (!tbody) return;
+  if (!items.length) {
+    tbody.innerHTML = '';
+    if (empty) empty.style.display = '';
+    return;
+  }
+  if (empty) empty.style.display = 'none';
+
+  tbody.innerHTML = items.map((item, i) => {
+    const status = item.status || 'pending';
+    const statusColor = status === 'done' ? 'var(--success)' : status === 'downloading' ? '#0088cc' : status === 'error' ? 'var(--danger)' : 'var(--text-dim)';
+    const statusLabel = { pending: '⌛ En attente', downloading: '⬇ Téléchargement', done: '✓ Terminé', error: '✗ Erreur' }[status] || status;
+    const ch = item.channel_id ? `<span style="color:var(--text-dim);font-size:11px">${esc(item.channel_id)}</span>` : '';
+    return `<tr>
+      <td><input type="checkbox" value="${esc(item.filehash || '')}" onchange="updateTelegramDeleteBtn()"></td>
+      <td><a href="/series/${esc(item.series_slug || '')}" style="color:var(--text)">${esc(item.series_name || '?')}</a></td>
+      <td style="font-size:11px;max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(item.filename || '')}">${esc(item.filename || '—')}</td>
+      <td>${esc(item.tome_number || '?')}</td>
+      <td>${item.tag && item.tag !== 'Notag' ? `<span style="background:var(--accent-dim,#1a3a3a);color:var(--accent);border-radius:4px;padding:1px 5px;font-size:10px">${esc(item.tag)}</span>` : '<span style="color:var(--text-dim);font-size:11px">Notag</span>'}</td>
+      <td>${ch}</td>
+      <td style="color:${statusColor};font-size:12px">${statusLabel}</td>
+    </tr>`;
+  }).join('');
+}
+
+function updateTelegramDeleteBtn() {
+  const checked = document.querySelectorAll('#telegram-queue-tbody input[type=checkbox]:checked').length;
+  const btn = document.getElementById('btn-delete-telegram');
+  if (btn) btn.style.display = checked ? '' : 'none';
+}
+
+function toggleSelectAllTelegram(cb) {
+  document.querySelectorAll('#telegram-queue-tbody input[type=checkbox]').forEach(c => c.checked = cb.checked);
+  updateTelegramDeleteBtn();
+}
+
+async function deleteSelectedTelegram() {
+  const hashes = [...document.querySelectorAll('#telegram-queue-tbody input[type=checkbox]:checked')].map(c => c.value).filter(Boolean);
+  if (!hashes.length) return;
+  if (!confirm(`Supprimer ${hashes.length} élément(s) de la queue ?`)) return;
+  await api('/queue/delete', 'POST', { filehashes: hashes });
+  await loadTelegramQueue();
+}
+
+async function clearTelegramQueue() {
+  if (!confirm('Purger les téléchargements Telegram terminés ?')) return;
+  await api('/telegram/clear-done', 'POST');
+  loadTelegramQueue();
+}
+
+async function scanTelegramIncoming(btn) {
+  const status = document.getElementById('telegram-scan-status');
+  if (btn) btn.disabled = true;
+  if (status) { status.textContent = 'Scan en cours…'; status.style.color = 'var(--text-dim)'; }
+  const d = await api('/telegram/scan-incoming');
+  if (btn) btn.disabled = false;
+  if (status) {
+    status.textContent = d.message || (d.ok ? 'Scan terminé' : 'Erreur');
+    status.style.color = d.ok ? 'var(--success)' : 'var(--error)';
+    setTimeout(() => { if (status) status.textContent = ''; }, 4000);
+  }
+  loadTelegramQueue();
+}
+
+function updateTelegramQueueBadge() {
+  const badge = document.getElementById('telegram-queue-badge');
+  if (!badge) return;
+  const active = _telegramQueueItems.filter(i => i.status !== 'done').length;
+  badge.textContent   = active;
+  badge.style.display = active > 0 ? '' : 'none';
 }
 
 // ── Surveillance ──
