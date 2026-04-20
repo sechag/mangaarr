@@ -250,7 +250,7 @@ def normalize_filename_for_series(filename):
 # MATCHING CSV
 # ═══════════════════════════════════════════════════
 
-def find_in_csv(series_name, csv_df, threshold=0.60):
+def find_in_csv(series_name, csv_df, threshold=0.80):
     """
     Cherche la meilleure correspondance dans le DataFrame CSV.
     Si series_name ressemble à un nom de fichier (contient [ ou (auteur)),
