@@ -484,9 +484,18 @@ def start_download(cfg: dict, message_id: int, channel_id: str,
     """
     def _worker():
         async def _inner():
+            from telethon.tl.types import Channel, Chat
             client = await _make_client(cfg)
             try:
-                entity    = await client.get_entity(int(channel_id))
+                # get_entity(int) échoue sans access_hash — résoudre via iter_dialogs
+                entity = None
+                async for dialog in client.iter_dialogs():
+                    e = dialog.entity
+                    if isinstance(e, (Channel, Chat)) and str(e.id) == str(channel_id):
+                        entity = e
+                        break
+                if entity is None:
+                    raise ValueError(f"Canal {channel_id} introuvable dans vos dialogs Telegram")
                 msg       = await client.get_messages(entity, ids=message_id)
                 if not msg or not msg.media:
                     log.error("[Telegram] Message %s introuvable dans canal %s", message_id, channel_id)
