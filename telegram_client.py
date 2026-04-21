@@ -54,7 +54,13 @@ def send_code(cfg: dict) -> dict:
         client = await _make_client(cfg, "")
         try:
             result = await client.send_code_request(cfg.get("phone", ""))
-            return {"ok": True, "phone_code_hash": result.phone_code_hash}
+            # Sauvegarde la session partielle (contient le DC de connexion)
+            session_after = client.session.save()
+            return {
+                "ok":               True,
+                "phone_code_hash":  result.phone_code_hash,
+                "partial_session":  session_after,
+            }
         finally:
             await client.disconnect()
 
@@ -64,8 +70,9 @@ def send_code(cfg: dict) -> dict:
             _pending_auth[cfg.get("id", "")] = {
                 "phone":           cfg.get("phone", ""),
                 "phone_code_hash": result["phone_code_hash"],
+                "partial_session": result["partial_session"],
             }
-        return result
+        return {"ok": result.get("ok", False), "message": result.get("message", "")}
     except Exception as e:
         return {"ok": False, "message": str(e)}
 
@@ -77,7 +84,9 @@ def sign_in(cfg: dict, code: str, password: str = "") -> dict:
         return {"ok": False, "message": "Aucune auth en cours. Renvoyez le code d'abord."}
 
     async def _inner():
-        client = await _make_client(cfg, "")
+        # Réutilise la session partielle pour rester sur le même DC Telegram
+        partial = pending.get("partial_session", "")
+        client = await _make_client(cfg, partial)
         try:
             try:
                 await client.sign_in(
