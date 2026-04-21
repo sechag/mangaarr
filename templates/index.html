@@ -270,9 +270,10 @@
       <div class="settings-card" id="tg-channels-card" style="display:none">
         <h2>Sélection des canaux</h2>
         <p class="hint">Sélectionnez les canaux où MangaArr cherchera des fichiers.</p>
-        <div style="margin-bottom:10px;display:flex;gap:8px">
+        <div style="margin-bottom:10px;display:flex;gap:8px;flex-wrap:wrap">
           <button class="btn btn-secondary btn-sm" onclick="refreshTelegramChannels()">↺ Actualiser la liste</button>
           <button class="btn btn-primary btn-sm" onclick="saveTelegramChannels()">Sauvegarder la sélection</button>
+          <button class="btn btn-secondary btn-sm" onclick="refreshTelegramCache()" id="tg-cache-btn">⟳ Actualiser le cache fichiers</button>
           <span id="tg-channels-status" class="status-msg" style="font-size:12px"></span>
         </div>
         <div id="tg-channels-list" style="max-height:400px;overflow-y:auto"></div>

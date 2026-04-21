@@ -763,6 +763,30 @@ def api_telegram_save_channels(idx_id):
     return jsonify({"ok": True})
 
 
+@app.route("/api/indexers/telegram/<idx_id>/refresh-cache", methods=["POST"])
+def api_telegram_refresh_cache(idx_id):
+    """Reconstruit le cache des fichiers pour tous les canaux de l'indexer."""
+    idx = _get_telegram_indexer(idx_id)
+    if not idx:
+        return jsonify({"ok": False, "message": "Indexer introuvable"})
+    channel_ids = [c["id"] for c in idx.get("channels", []) if c.get("enabled", True)]
+    if not channel_ids:
+        return jsonify({"ok": False, "message": "Aucun canal sélectionné"})
+    result = telegram_client.build_channel_cache(idx, channel_ids)
+    return jsonify(result)
+
+
+@app.route("/api/indexers/telegram/<idx_id>/cache-status", methods=["GET"])
+def api_telegram_cache_status(idx_id):
+    """Retourne l'état du cache pour les canaux de l'indexer."""
+    idx = _get_telegram_indexer(idx_id)
+    if not idx:
+        return jsonify({"ok": False, "message": "Indexer introuvable"})
+    channel_ids = [c["id"] for c in idx.get("channels", []) if c.get("enabled", True)]
+    statuses = telegram_client.get_cache_status(channel_ids)
+    return jsonify({"ok": True, "statuses": statuses})
+
+
 # ════════════════════════════════════════════════════════
 # TELEGRAM — Recherche sur page série
 # ════════════════════════════════════════════════════════

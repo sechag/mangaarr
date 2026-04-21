@@ -3188,6 +3188,26 @@ async function saveTelegramChannels() {
   }
 }
 
+async function refreshTelegramCache() {
+  const btn    = document.getElementById('tg-cache-btn');
+  const status = document.getElementById('tg-channels-status');
+  if (btn) { btn.disabled = true; btn.textContent = '⟳ Construction…'; }
+  if (status) { status.textContent = 'Construction du cache en cours…'; status.style.color = 'var(--text-dim)'; }
+  const d = await api(`/indexers/telegram/${_telegramCurrentIdx}/refresh-cache`, 'POST');
+  if (btn) { btn.disabled = false; btn.textContent = '⟳ Actualiser le cache fichiers'; }
+  if (status) {
+    if (d.ok) {
+      const names = (d.launched || []).join(', ') || 'tous les canaux';
+      status.textContent = `✓ Cache reconstruit pour : ${names}`;
+      status.style.color = 'var(--success)';
+    } else {
+      status.textContent = d.message || 'Erreur';
+      status.style.color = 'var(--danger)';
+    }
+    setTimeout(() => { if (status) status.textContent = ''; }, 5000);
+  }
+}
+
 // ════════════════════════════════════════════════
 // TELEGRAM — Queue
 // ════════════════════════════════════════════════

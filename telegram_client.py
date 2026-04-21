@@ -2,10 +2,10 @@
 telegram_client.py — Client Telegram (Telethon) pour MangaArr
 - Authentification via numéro de téléphone (API MTProto officielle)
 - Listage des canaux rejoints
-- Recherche de fichiers .cbz/.cbr dans les canaux sélectionnés
+- Recherche de fichiers .cbz/.cbr dans les canaux sélectionnés (avec cache par canal)
 - Téléchargement de fichiers avec suivi de progression
 """
-import os, re, asyncio, logging, threading
+import os, re, asyncio, logging, threading, json, time
 
 log = logging.getLogger("mangaarr.telegram_client")
 
@@ -14,6 +14,12 @@ _pending_auth: dict = {}  # {indexer_id: {phone, phone_code_hash}}
 
 # Verrou pour éviter plusieurs téléchargements simultanés sur le même indexer
 _download_locks: dict = {}
+
+# Suivi des builds de cache en cours {channel_id: True}
+_cache_building: dict = {}
+_cache_lock = threading.Lock()
+
+CACHE_TTL_HOURS = 24
 
 
 # ═══════════════════════════════════════════════════
@@ -173,29 +179,86 @@ def get_channels(cfg: dict) -> dict:
 
 
 # ═══════════════════════════════════════════════════
-# RECHERCHE DE FICHIERS
+# CACHE PAR CANAL
 # ═══════════════════════════════════════════════════
 
-def search_files(cfg: dict, query: str, channel_ids: list) -> dict:
-    """
-    Recherche des fichiers .cbz/.cbr correspondant à la query dans les canaux sélectionnés.
-    Utilise iter_dialogs() pour résoudre les entités (peuple le cache Telethon avec access_hash).
-    """
-    async def _inner():
-        from telethon.tl.types import Channel, Chat, InputMessagesFilterDocument
+def _cache_dir() -> str:
+    base = os.environ.get("MANGAARR_CACHE", "/data/cache")
+    d = os.path.join(base, "telegram_channels")
+    os.makedirs(d, exist_ok=True)
+    return d
 
+
+def _cache_path(channel_id: str) -> str:
+    return os.path.join(_cache_dir(), f"{channel_id}.json")
+
+
+def _load_cache(channel_id: str) -> dict | None:
+    path = _cache_path(channel_id)
+    if not os.path.exists(path):
+        return None
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except Exception:
+        return None
+
+
+def _save_cache(channel_id: str, channel_name: str, files: list):
+    data = {
+        "channel_id":   channel_id,
+        "channel_name": channel_name,
+        "last_scan":    time.time(),
+        "files":        files,
+    }
+    try:
+        with open(_cache_path(channel_id), "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False)
+    except Exception as e:
+        log.warning("[Telegram] _save_cache %s : %s", channel_id, e)
+
+
+def _cache_is_fresh(cache: dict) -> bool:
+    last = cache.get("last_scan", 0)
+    return (time.time() - last) < CACHE_TTL_HOURS * 3600
+
+
+async def _build_cache_async(client, entity, channel_id: str, channel_name: str):
+    """Scanne TOUT le canal et sauvegarde le cache. Appelé dans un thread dédié."""
+    from telethon.tl.types import InputMessagesFilterDocument
+    files = []
+    try:
+        async for msg in client.iter_messages(entity, filter=InputMessagesFilterDocument):
+            if not msg.file:
+                continue
+            fname = (msg.file.name or "").strip()
+            if not fname.lower().endswith((".cbz", ".cbr")):
+                continue
+            files.append({
+                "filename":   fname,
+                "message_id": msg.id,
+                "size":       msg.file.size or 0,
+                "date":       msg.date.isoformat() if msg.date else "",
+            })
+        _save_cache(channel_id, channel_name, files)
+        log.info("[Telegram] Cache construit pour %s : %d fichiers", channel_name, len(files))
+    except Exception as e:
+        log.error("[Telegram] _build_cache_async %s : %s", channel_id, e)
+    finally:
+        with _cache_lock:
+            _cache_building.pop(channel_id, None)
+
+
+def build_channel_cache(cfg: dict, channel_ids: list) -> dict:
+    """Reconstruit le cache pour les canaux donnés (scan complet, synchrone)."""
+    async def _resolve_and_build():
+        from telethon.tl.types import Channel, Chat
         client = await _make_client(cfg)
         try:
             if not await client.is_user_authorized():
-                return {"ok": False, "message": "Session invalide", "files": []}
-
-            # ── Résolution des entités via iter_dialogs ──────────────────────────
-            # get_entity(int_id) seul échoue sans access_hash dans la session.
-            # iter_dialogs() peuple le cache interne de Telethon, ce qui permet
-            # ensuite d'itérer les messages de chaque canal correctement.
-            target_ids  = {str(ch_id) for ch_id in channel_ids}
-            entity_map  = {}   # str(id) -> (entity, name)
-
+                return {"ok": False, "message": "Session invalide"}
+            target_ids = {str(i) for i in channel_ids}
+            entity_map = {}
             async for dialog in client.iter_dialogs():
                 entity = dialog.entity
                 if not isinstance(entity, (Channel, Chat)):
@@ -203,82 +266,210 @@ def search_files(cfg: dict, query: str, channel_ids: list) -> dict:
                 eid = str(entity.id)
                 if eid in target_ids:
                     entity_map[eid] = (entity, dialog.name or eid)
-                # Arrête dès qu'on a tous les canaux ciblés
                 if len(entity_map) == len(target_ids):
                     break
 
-            if not entity_map:
-                return {
-                    "ok":      False,
-                    "message": "Canaux introuvables dans vos dialogs Telegram. "
-                               "Rafraîchissez la liste et re-sauvegardez la sélection.",
-                    "files":   [],
-                }
-
-            # ── Filtrage côté client sur le nom de fichier ───────────────────────
-            query_words = [w.lower() for w in query.split() if len(w) > 1]
-            results     = []
-            seen_hashes = set()
-            chan_errors  = []
-
-            for ch_id in channel_ids:
-                entry = entity_map.get(str(ch_id))
-                if not entry:
-                    chan_errors.append(f"Canal {ch_id} non trouvé dans vos dialogs")
-                    continue
-
-                entity, ch_name = entry
-                try:
-                    async for msg in client.iter_messages(
-                        entity,
-                        filter=InputMessagesFilterDocument,
-                    ):
-                        if not msg.file:
-                            continue
-                        fname = (msg.file.name or "").strip()
-                        if not fname.lower().endswith((".cbz", ".cbr")):
-                            continue
-
-                        fname_lower = fname.lower()
-                        if query_words and not all(w in fname_lower for w in query_words):
-                            continue
-
-                        fhash = f"tg_{ch_id}_{msg.id}"
-                        if fhash in seen_hashes:
-                            continue
-                        seen_hashes.add(fhash)
-
-                        tome_num = _detect_tome(fname)
-                        results.append({
-                            "filename":     fname,
-                            "size":         msg.file.size or 0,
-                            "tome_number":  tome_num,
-                            "tome_str":     f"T{tome_num:02d}" if tome_num else "?",
-                            "message_id":   msg.id,
-                            "channel_id":   str(ch_id),
-                            "channel_name": ch_name,
-                            "date":         msg.date.isoformat() if msg.date else "",
-                            "filehash":     fhash,
-                            "tag":          _detect_tag(fname),
-                        })
-                except Exception as e:
-                    err_msg = f"Canal {ch_name} : {e}"
-                    log.warning("[Telegram] %s", err_msg)
-                    chan_errors.append(err_msg)
-
-            results.sort(key=lambda x: (x["tome_number"] or 9999, x["filename"]))
-            msg = ""
-            if chan_errors:
-                msg = " | ".join(chan_errors)
-            return {"ok": True, "files": results, "warnings": chan_errors, "message": msg}
+            launched = []
+            for ch_id, (entity, ch_name) in entity_map.items():
+                with _cache_lock:
+                    if ch_id in _cache_building:
+                        continue
+                    _cache_building[ch_id] = True
+                # Build cache inline (still in this async context)
+                await _build_cache_async(client, entity, ch_id, ch_name)
+                launched.append(ch_name)
+            return {"ok": True, "launched": launched}
         finally:
             await client.disconnect()
 
     try:
-        return _run(_inner())
+        return _run(_resolve_and_build())
     except Exception as e:
-        log.error("[Telegram] search_files : %s", e, exc_info=True)
-        return {"ok": False, "message": str(e), "files": []}
+        return {"ok": False, "message": str(e)}
+
+
+def get_cache_status(channel_ids: list) -> dict:
+    """Retourne l'état du cache pour chaque canal."""
+    statuses = {}
+    for ch_id in channel_ids:
+        ch_id = str(ch_id)
+        with _cache_lock:
+            building = ch_id in _cache_building
+        cache = _load_cache(ch_id)
+        if building:
+            statuses[ch_id] = {"status": "building"}
+        elif cache is None:
+            statuses[ch_id] = {"status": "missing"}
+        elif not _cache_is_fresh(cache):
+            statuses[ch_id] = {
+                "status":     "stale",
+                "file_count": len(cache.get("files", [])),
+                "last_scan":  cache.get("last_scan", 0),
+            }
+        else:
+            statuses[ch_id] = {
+                "status":     "ok",
+                "file_count": len(cache.get("files", [])),
+                "last_scan":  cache.get("last_scan", 0),
+            }
+    return statuses
+
+
+# ═══════════════════════════════════════════════════
+# RECHERCHE DE FICHIERS
+# ═══════════════════════════════════════════════════
+
+def search_files(cfg: dict, query: str, channel_ids: list) -> dict:
+    """
+    Recherche des fichiers .cbz/.cbr dans les canaux sélectionnés.
+    - Si le cache du canal est frais (< 24h) : recherche instantanée dans le cache.
+    - Sinon : construit d'abord le cache (scan complet), puis cherche.
+    Les canaux dont le cache est en cours de construction retournent un avertissement.
+    """
+    query_words = [w.lower() for w in query.split() if len(w) > 1]
+    results     = []
+    seen_hashes = set()
+    chan_errors  = []
+    chan_building = []
+
+    # ── Canaux avec cache frais : recherche locale ────────────────────────────
+    ids_need_scan = []
+    for ch_id in channel_ids:
+        ch_id = str(ch_id)
+        with _cache_lock:
+            if ch_id in _cache_building:
+                chan_building.append(ch_id)
+                continue
+        cache = _load_cache(ch_id)
+        if cache and _cache_is_fresh(cache):
+            ch_name = cache.get("channel_name", ch_id)
+            for entry in cache.get("files", []):
+                fname = entry.get("filename", "")
+                fname_lower = fname.lower()
+                if query_words and not all(w in fname_lower for w in query_words):
+                    continue
+                fhash = f"tg_{ch_id}_{entry['message_id']}"
+                if fhash in seen_hashes:
+                    continue
+                seen_hashes.add(fhash)
+                tome_num = _detect_tome(fname)
+                results.append({
+                    "filename":     fname,
+                    "size":         entry.get("size", 0),
+                    "tome_number":  tome_num,
+                    "tome_str":     f"T{tome_num:02d}" if tome_num else "?",
+                    "message_id":   entry["message_id"],
+                    "channel_id":   ch_id,
+                    "channel_name": ch_name,
+                    "date":         entry.get("date", ""),
+                    "filehash":     fhash,
+                    "tag":          _detect_tag(fname),
+                })
+        else:
+            ids_need_scan.append(ch_id)
+
+    # ── Canaux sans cache ou cache périmé : scan + build cache ────────────────
+    if ids_need_scan:
+        async def _scan_and_cache():
+            from telethon.tl.types import Channel, Chat, InputMessagesFilterDocument
+            client = await _make_client(cfg)
+            try:
+                if not await client.is_user_authorized():
+                    return {"ok": False, "message": "Session invalide", "files": []}
+
+                target_ids = set(ids_need_scan)
+                entity_map = {}
+                async for dialog in client.iter_dialogs():
+                    entity = dialog.entity
+                    if not isinstance(entity, (Channel, Chat)):
+                        continue
+                    eid = str(entity.id)
+                    if eid in target_ids:
+                        entity_map[eid] = (entity, dialog.name or eid)
+                    if len(entity_map) == len(target_ids):
+                        break
+
+                scan_results = []
+                scan_errors  = []
+                for ch_id in ids_need_scan:
+                    entry = entity_map.get(str(ch_id))
+                    if not entry:
+                        scan_errors.append(f"Canal {ch_id} non trouvé dans vos dialogs")
+                        continue
+                    entity, ch_name = entry
+                    channel_files = []
+                    try:
+                        async for msg in client.iter_messages(entity, filter=InputMessagesFilterDocument):
+                            if not msg.file:
+                                continue
+                            fname = (msg.file.name or "").strip()
+                            if not fname.lower().endswith((".cbz", ".cbr")):
+                                continue
+                            channel_files.append({
+                                "filename":   fname,
+                                "message_id": msg.id,
+                                "size":       msg.file.size or 0,
+                                "date":       msg.date.isoformat() if msg.date else "",
+                            })
+                        _save_cache(ch_id, ch_name, channel_files)
+                        log.info("[Telegram] Cache construit %s : %d fichiers", ch_name, len(channel_files))
+
+                        for fe in channel_files:
+                            fname = fe["filename"]
+                            fname_lower = fname.lower()
+                            if query_words and not all(w in fname_lower for w in query_words):
+                                continue
+                            fhash = f"tg_{ch_id}_{fe['message_id']}"
+                            tome_num = _detect_tome(fname)
+                            scan_results.append({
+                                "filename":     fname,
+                                "size":         fe.get("size", 0),
+                                "tome_number":  tome_num,
+                                "tome_str":     f"T{tome_num:02d}" if tome_num else "?",
+                                "message_id":   fe["message_id"],
+                                "channel_id":   ch_id,
+                                "channel_name": ch_name,
+                                "date":         fe.get("date", ""),
+                                "filehash":     fhash,
+                                "tag":          _detect_tag(fname),
+                            })
+                    except Exception as e:
+                        err = f"Canal {ch_name} : {e}"
+                        log.warning("[Telegram] %s", err)
+                        scan_errors.append(err)
+
+                return {"ok": True, "files": scan_results, "errors": scan_errors}
+            finally:
+                await client.disconnect()
+
+        try:
+            r = _run(_scan_and_cache())
+            if r.get("ok"):
+                for f in r["files"]:
+                    fhash = f["filehash"]
+                    if fhash not in seen_hashes:
+                        seen_hashes.add(fhash)
+                        results.append(f)
+                chan_errors.extend(r.get("errors", []))
+            else:
+                chan_errors.append(r.get("message", "Erreur scan"))
+        except Exception as e:
+            log.error("[Telegram] search_files scan : %s", e, exc_info=True)
+            chan_errors.append(str(e))
+
+    if chan_building:
+        chan_errors.append(
+            f"Cache en construction pour {len(chan_building)} canal(aux) — réessayez dans quelques instants"
+        )
+
+    results.sort(key=lambda x: (x["tome_number"] or 9999, x["filename"]))
+    warnings = chan_errors
+    return {
+        "ok":       True,
+        "files":    results,
+        "warnings": warnings,
+        "message":  " | ".join(warnings) if warnings else "",
+    }
 
 
 # ═══════════════════════════════════════════════════
