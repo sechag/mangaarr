@@ -3308,7 +3308,7 @@ async function deleteSelectedTelegram() {
   const hashes = [...document.querySelectorAll('#telegram-queue-tbody input[type=checkbox]:checked')].map(c => c.value).filter(Boolean);
   if (!hashes.length) return;
   if (!confirm(`Supprimer ${hashes.length} élément(s) de la queue ?`)) return;
-  await api('/queue/delete', 'POST', { filehashes: hashes });
+  await api('/queue/items', 'DELETE', { filehashes: hashes });
   await loadTelegramQueue();
 }
 
