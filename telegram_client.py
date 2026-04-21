@@ -250,42 +250,62 @@ async def _build_cache_async(client, entity, channel_id: str, channel_name: str)
 
 
 def build_channel_cache(cfg: dict, channel_ids: list) -> dict:
-    """Reconstruit le cache pour les canaux donnés (scan complet, synchrone)."""
-    async def _resolve_and_build():
-        from telethon.tl.types import Channel, Chat
-        client = await _make_client(cfg)
-        try:
-            if not await client.is_user_authorized():
-                return {"ok": False, "message": "Session invalide"}
-            target_ids = {str(i) for i in channel_ids}
-            entity_map = {}
-            async for dialog in client.iter_dialogs():
-                entity = dialog.entity
-                if not isinstance(entity, (Channel, Chat)):
-                    continue
-                eid = str(entity.id)
-                if eid in target_ids:
-                    entity_map[eid] = (entity, dialog.name or eid)
-                if len(entity_map) == len(target_ids):
-                    break
-
-            launched = []
-            for ch_id, (entity, ch_name) in entity_map.items():
-                with _cache_lock:
-                    if ch_id in _cache_building:
-                        continue
-                    _cache_building[ch_id] = True
-                # Build cache inline (still in this async context)
+    """
+    Lance la reconstruction du cache en arrière-plan pour chaque canal.
+    Retourne immédiatement — le scan tourne dans des threads dédiés.
+    """
+    def _worker_for_channel(ch_id: str, ch_name: str):
+        async def _scan():
+            from telethon.tl.types import Channel, Chat, InputMessagesFilterDocument
+            client = await _make_client(cfg)
+            try:
+                # Résoudre l'entité via iter_dialogs (access_hash requis)
+                entity = None
+                async for dialog in client.iter_dialogs():
+                    e = dialog.entity
+                    if isinstance(e, (Channel, Chat)) and str(e.id) == ch_id:
+                        entity = e
+                        break
+                if entity is None:
+                    log.warning("[Telegram] Cache : canal %s introuvable dans dialogs", ch_id)
+                    return
                 await _build_cache_async(client, entity, ch_id, ch_name)
-                launched.append(ch_name)
-            return {"ok": True, "launched": launched}
-        finally:
-            await client.disconnect()
+            except Exception as e:
+                log.error("[Telegram] Cache worker %s : %s", ch_id, e)
+                with _cache_lock:
+                    _cache_building.pop(ch_id, None)
+            finally:
+                await client.disconnect()
 
-    try:
-        return _run(_resolve_and_build())
-    except Exception as e:
-        return {"ok": False, "message": str(e)}
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        try:
+            loop.run_until_complete(_scan())
+        finally:
+            loop.close()
+            asyncio.set_event_loop(None)
+
+    # Résoudre les noms de canaux depuis le cache existant ou utiliser l'id
+    launched = []
+    already  = []
+    for ch_id in channel_ids:
+        ch_id = str(ch_id)
+        with _cache_lock:
+            if ch_id in _cache_building:
+                already.append(ch_id)
+                continue
+            _cache_building[ch_id] = True
+        existing = _load_cache(ch_id)
+        ch_name  = existing.get("channel_name", ch_id) if existing else ch_id
+        t = threading.Thread(target=_worker_for_channel, args=(ch_id, ch_name),
+                             daemon=True, name=f"tg-cache-{ch_id}")
+        t.start()
+        launched.append(ch_name)
+
+    msg = f"Cache en construction pour : {', '.join(launched)}" if launched else ""
+    if already:
+        msg += f" ({len(already)} déjà en cours)"
+    return {"ok": True, "message": msg or "Rien à faire", "launched": launched}
 
 
 def get_cache_status(channel_ids: list) -> dict:
@@ -502,8 +522,9 @@ def start_download(cfg: dict, message_id: int, channel_id: str,
                     _update_status(filehash, "error")
                     return
 
-                os.makedirs(dest_dir, exist_ok=True)
-                dest_path = os.path.join(dest_dir, filename)
+                temp_dir  = os.path.join(dest_dir, "Temp_Telegram")
+                os.makedirs(temp_dir, exist_ok=True)
+                dest_path = os.path.join(temp_dir, filename)
 
                 log.info("[Telegram] Début téléchargement : %s", filename)
                 _update_status(filehash, "downloading")
@@ -569,6 +590,12 @@ def _finalize(filehash: str, dest_path: str):
                 f" : {os.path.basename(dest_path)} → {history['dest_filename']}",
                 "info",
             )
+            # Nettoyer le fichier temporaire après organisation réussie
+            try:
+                if os.path.exists(dest_path):
+                    os.remove(dest_path)
+            except Exception as del_err:
+                log.warning("[Telegram] Suppression temp échouée : %s", del_err)
         else:
             _cfg.add_log(f"[Telegram] Organisation échouée : {result.get('message','?')}", "warning")
 
