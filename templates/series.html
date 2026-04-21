@@ -1021,7 +1021,8 @@ async function searchTelegram() {
     return;
   }
 
-  if (status) status.textContent = `${_telegramFiles.length} fichier(s) trouvé(s)`;
+  const warns = (d.warnings || []).filter(Boolean);
+  if (status) status.textContent = `${_telegramFiles.length} fichier(s) trouvé(s)` + (warns.length ? ` — ⚠ ${warns.join(' | ')}` : '');
 
   const ownedSet = new Set(d.owned_tomes || []);
   res.innerHTML = _telegramFiles.map((f, idx) => {

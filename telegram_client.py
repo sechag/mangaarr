@@ -179,29 +179,56 @@ def get_channels(cfg: dict) -> dict:
 def search_files(cfg: dict, query: str, channel_ids: list) -> dict:
     """
     Recherche des fichiers .cbz/.cbr correspondant à la query dans les canaux sélectionnés.
-    Retourne [{filename, size, tome_number, message_id, channel_id, channel_name, filehash}].
+    Utilise iter_dialogs() pour résoudre les entités (peuple le cache Telethon avec access_hash).
     """
     async def _inner():
-        from telethon.tl.types import InputMessagesFilterDocument
+        from telethon.tl.types import Channel, Chat, InputMessagesFilterDocument
 
         client = await _make_client(cfg)
         try:
             if not await client.is_user_authorized():
                 return {"ok": False, "message": "Session invalide", "files": []}
 
-            # Mots-clés de la query pour filtrage côté client sur le nom de fichier
-            query_words = [w.lower() for w in query.split() if len(w) > 1]
+            # ── Résolution des entités via iter_dialogs ──────────────────────────
+            # get_entity(int_id) seul échoue sans access_hash dans la session.
+            # iter_dialogs() peuple le cache interne de Telethon, ce qui permet
+            # ensuite d'itérer les messages de chaque canal correctement.
+            target_ids  = {str(ch_id) for ch_id in channel_ids}
+            entity_map  = {}   # str(id) -> (entity, name)
 
-            results = []
+            async for dialog in client.iter_dialogs():
+                entity = dialog.entity
+                if not isinstance(entity, (Channel, Chat)):
+                    continue
+                eid = str(entity.id)
+                if eid in target_ids:
+                    entity_map[eid] = (entity, dialog.name or eid)
+                # Arrête dès qu'on a tous les canaux ciblés
+                if len(entity_map) == len(target_ids):
+                    break
+
+            if not entity_map:
+                return {
+                    "ok":      False,
+                    "message": "Canaux introuvables dans vos dialogs Telegram. "
+                               "Rafraîchissez la liste et re-sauvegardez la sélection.",
+                    "files":   [],
+                }
+
+            # ── Filtrage côté client sur le nom de fichier ───────────────────────
+            query_words = [w.lower() for w in query.split() if len(w) > 1]
+            results     = []
             seen_hashes = set()
+            chan_errors  = []
 
             for ch_id in channel_ids:
-                try:
-                    entity  = await client.get_entity(int(ch_id))
-                    ch_name = getattr(entity, "title", None) or getattr(entity, "username", str(ch_id))
+                entry = entity_map.get(str(ch_id))
+                if not entry:
+                    chan_errors.append(f"Canal {ch_id} non trouvé dans vos dialogs")
+                    continue
 
-                    # Pas de paramètre search= : Telegram ne cherche pas dans les noms de fichiers.
-                    # On itère tous les documents et on filtre par nom côté client.
+                entity, ch_name = entry
+                try:
                     async for msg in client.iter_messages(
                         entity,
                         filter=InputMessagesFilterDocument,
@@ -213,9 +240,8 @@ def search_files(cfg: dict, query: str, channel_ids: list) -> dict:
                         if not fname.lower().endswith((".cbz", ".cbr")):
                             continue
 
-                        # Filtre : tous les mots de la query doivent être dans le nom du fichier
                         fname_lower = fname.lower()
-                        if not all(w in fname_lower for w in query_words):
+                        if query_words and not all(w in fname_lower for w in query_words):
                             continue
 
                         fhash = f"tg_{ch_id}_{msg.id}"
@@ -237,16 +263,22 @@ def search_files(cfg: dict, query: str, channel_ids: list) -> dict:
                             "tag":          _detect_tag(fname),
                         })
                 except Exception as e:
-                    log.warning("[Telegram] Erreur canal %s : %s", ch_id, e)
+                    err_msg = f"Canal {ch_name} : {e}"
+                    log.warning("[Telegram] %s", err_msg)
+                    chan_errors.append(err_msg)
 
             results.sort(key=lambda x: (x["tome_number"] or 9999, x["filename"]))
-            return {"ok": True, "files": results}
+            msg = ""
+            if chan_errors:
+                msg = " | ".join(chan_errors)
+            return {"ok": True, "files": results, "warnings": chan_errors, "message": msg}
         finally:
             await client.disconnect()
 
     try:
         return _run(_inner())
     except Exception as e:
+        log.error("[Telegram] search_files : %s", e, exc_info=True)
         return {"ok": False, "message": str(e), "files": []}
 
 
