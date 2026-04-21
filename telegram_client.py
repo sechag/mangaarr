@@ -232,7 +232,6 @@ def search_files(cfg: dict, query: str, channel_ids: list) -> dict:
                     async for msg in client.iter_messages(
                         entity,
                         filter=InputMessagesFilterDocument,
-                        limit=2000,
                     ):
                         if not msg.file:
                             continue
