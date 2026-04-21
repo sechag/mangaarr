@@ -189,6 +189,9 @@ def search_files(cfg: dict, query: str, channel_ids: list) -> dict:
             if not await client.is_user_authorized():
                 return {"ok": False, "message": "Session invalide", "files": []}
 
+            # Mots-clés de la query pour filtrage côté client sur le nom de fichier
+            query_words = [w.lower() for w in query.split() if len(w) > 1]
+
             results = []
             seen_hashes = set()
 
@@ -197,16 +200,22 @@ def search_files(cfg: dict, query: str, channel_ids: list) -> dict:
                     entity  = await client.get_entity(int(ch_id))
                     ch_name = getattr(entity, "title", None) or getattr(entity, "username", str(ch_id))
 
+                    # Pas de paramètre search= : Telegram ne cherche pas dans les noms de fichiers.
+                    # On itère tous les documents et on filtre par nom côté client.
                     async for msg in client.iter_messages(
                         entity,
-                        search=query,
                         filter=InputMessagesFilterDocument,
-                        limit=300,
+                        limit=2000,
                     ):
                         if not msg.file:
                             continue
                         fname = (msg.file.name or "").strip()
                         if not fname.lower().endswith((".cbz", ".cbr")):
+                            continue
+
+                        # Filtre : tous les mots de la query doivent être dans le nom du fichier
+                        fname_lower = fname.lower()
+                        if not all(w in fname_lower for w in query_words):
                             continue
 
                         fhash = f"tg_{ch_id}_{msg.id}"
