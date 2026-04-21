@@ -288,6 +288,8 @@ def organize_file(item: dict | None = None, filepath: str | None = None) -> dict
         try:
             import renamer as _r, profiles as _p
             tag          = _p.detect_tag(filename)
+            if tag == "Notag" and src_path.lower().endswith(".cbz"):
+                tag = _p.detect_tag_from_cbz(src_path)
             folder_name  = os.path.basename(dest_folder)
             fmt          = _r.get_rename_format()
             _t_clean     = str(tome_number).lstrip("Tt").lstrip("0") or "0"
@@ -344,6 +346,8 @@ def organize_file(item: dict | None = None, filepath: str | None = None) -> dict
         try:
             import renamer as _r, profiles as _p
             tag          = _p.detect_tag(os.path.basename(working_path))
+            if tag == "Notag" and working_path.lower().endswith(".cbz"):
+                tag = _p.detect_tag_from_cbz(working_path)
             fmt          = _r.get_rename_format()
             _t_clean     = str(tome_number).lstrip("Tt").lstrip("0") or "0"
             tome_str     = f"T{int(_t_clean):02d}"

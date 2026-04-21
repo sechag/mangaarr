@@ -66,6 +66,30 @@ def detect_tag(filename: str) -> str:
     return "Notag"
 
 
+def detect_tag_from_cbz(filepath: str) -> str:
+    """
+    Ouvre un CBZ (ZIP) et cherche un tag connu dans les noms de dossiers internes.
+    Utile quand le nom de fichier ne contient pas de tag.
+    Retourne "Notag" si rien trouvé.
+    """
+    import zipfile
+    try:
+        with zipfile.ZipFile(filepath, "r") as zf:
+            dirs = set()
+            for name in zf.namelist():
+                parts = name.replace("\\", "/").split("/")
+                # Prend les noms de dossiers (au moins 2 segments = dossier + fichier)
+                if len(parts) >= 2:
+                    dirs.add(parts[0])
+            for d in dirs:
+                tag = detect_tag(d)
+                if tag != "Notag":
+                    return tag
+    except Exception:
+        pass
+    return "Notag"
+
+
 def _resolve_neo(tag: str, text: str) -> str:
     """Résout RIP-Club -> NEO RIP-Club si 'neo' est présent dans le texte."""
     if tag == "RIP-Club" and "neo" in text:
