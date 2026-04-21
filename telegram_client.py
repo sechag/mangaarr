@@ -531,8 +531,11 @@ def start_download(cfg: dict, message_id: int, channel_id: str,
 
                 await client.download_media(msg, file=dest_path)
 
+                # Déplacer vers le dossier parent (téléchargement complet)
+                final_path = os.path.join(dest_dir, filename)
+                os.replace(dest_path, final_path)
                 log.info("[Telegram] ✓ Terminé : %s", filename)
-                _finalize(filehash, dest_path)
+                _finalize(filehash, final_path)
 
             except Exception as e:
                 log.error("[Telegram] ✗ %s : %s", filename, e)
@@ -590,12 +593,6 @@ def _finalize(filehash: str, dest_path: str):
                 f" : {os.path.basename(dest_path)} → {history['dest_filename']}",
                 "info",
             )
-            # Nettoyer le fichier temporaire après organisation réussie
-            try:
-                if os.path.exists(dest_path):
-                    os.remove(dest_path)
-            except Exception as del_err:
-                log.warning("[Telegram] Suppression temp échouée : %s", del_err)
         else:
             _cfg.add_log(f"[Telegram] Organisation échouée : {result.get('message','?')}", "warning")
 
