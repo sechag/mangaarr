@@ -57,7 +57,7 @@ async function api(path, method = 'GET', body = null, timeoutMs = 30000) {
     opts.signal = controller.signal;
     const r = await fetch('/api' + path, opts);
     clearTimeout(tid);
-    return r.json();
+    return await r.json();
   } catch (e) {
     if (e.name === 'AbortError') return { ok: false, message: 'Timeout (serveur occupé)' };
     return { ok: false, message: String(e) };
@@ -635,12 +635,8 @@ let _komgaConns   = [];
 let _komgaLibraries = {};  // { komga_idx: [{id, name}] }
 
 async function loadMetadataSources() {
-  // Charge TOUJOURS les connexions Komga en premier (nécessaire pour le modal)
-  const connData = await api('/connect/komga');
-  _komgaConns = connData.connections || [];
-
-  const [d] = await Promise.all([api('/metadata/sources')]);
-  const sources  = d.sources || [];
+  const d = await api('/metadata/sources');
+  const sources = d.sources || [];
   const container = document.getElementById('metadata-sources-list');
   if (!container) return;
 
