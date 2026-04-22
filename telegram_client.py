@@ -218,9 +218,10 @@ def _save_cache(channel_id: str, channel_name: str, files: list):
         log.warning("[Telegram] _save_cache %s : %s", channel_id, e)
 
 
-def _cache_is_fresh(cache: dict) -> bool:
+def _cache_is_fresh(cache: dict, ttl_hours: int = None) -> bool:
     last = cache.get("last_scan", 0)
-    return (time.time() - last) < CACHE_TTL_HOURS * 3600
+    ttl  = (ttl_hours or CACHE_TTL_HOURS) * 3600
+    return (time.time() - last) < ttl
 
 
 async def _build_cache_async(client, entity, channel_id: str, channel_name: str):
@@ -342,10 +343,10 @@ def get_cache_status(channel_ids: list) -> dict:
 def search_files(cfg: dict, query: str, channel_ids: list) -> dict:
     """
     Recherche des fichiers .cbz/.cbr dans les canaux sélectionnés.
-    - Si le cache du canal est frais (< 24h) : recherche instantanée dans le cache.
-    - Sinon : construit d'abord le cache (scan complet), puis cherche.
-    Les canaux dont le cache est en cours de construction retournent un avertissement.
+    - Si le cache est frais (< cache_frequency_hours) : recherche instantanée.
+    - Sinon : scan complet + mise en cache, puis recherche.
     """
+    cache_ttl = int(cfg.get("cache_frequency_hours", CACHE_TTL_HOURS))
     query_words = [w.lower() for w in query.split() if len(w) > 1]
     results     = []
     seen_hashes = set()
@@ -361,7 +362,7 @@ def search_files(cfg: dict, query: str, channel_ids: list) -> dict:
                 chan_building.append(ch_id)
                 continue
         cache = _load_cache(ch_id)
-        if cache and _cache_is_fresh(cache):
+        if cache and _cache_is_fresh(cache, cache_ttl):
             ch_name = cache.get("channel_name", ch_id)
             for entry in cache.get("files", []):
                 fname = entry.get("filename", "")

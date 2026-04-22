@@ -645,7 +645,7 @@ async function loadMetadataSources() {
   if (!container) return;
 
   if (!sources.length) {
-    container.innerHTML = `<div class="settings-card">${emptyState('Aucune source configurée. Cliquez sur + Ajouter.')}</div>`;
+    container.innerHTML = emptyState('Aucune source configurée. Cliquez sur + Ajouter.');
   } else {
     // Charge les noms de librairies pour affichage
   const libsData  = await api('/libraries');
@@ -3017,12 +3017,17 @@ async function loadTelegramIndexers() {
     return;
   }
   list.innerHTML = indexers.map(idx => {
-    const auth = idx.session_string ? '✓ Authentifié' : '⚠ Non authentifié';
-    const authColor = idx.session_string ? 'var(--success)' : 'var(--warning, #f59e0b)';
+    const auth      = idx.authenticated ? '✓ Authentifié' : '⚠ Non authentifié';
+    const authColor = idx.authenticated ? 'var(--success)' : 'var(--warning, #f59e0b)';
+    const phoneMask = (idx.phone || '').replace(/(\+?\d{2,3})\d+(\d{2})$/, '$1••••••$2');
     return `<div class="indexer-card">
       <div class="indexer-card-info">
         <div class="indexer-card-name">${esc(idx.name)}</div>
-        <div class="indexer-card-url" style="color:${authColor}">${auth} — ${esc(idx.phone || '')}</div>
+        <div class="indexer-card-url" style="color:${authColor}">${auth}
+          — <span id="tg-phone-${esc(idx.id)}" style="cursor:pointer;user-select:none"
+                  data-full="${esc(idx.phone || '')}" data-masked="${esc(phoneMask)}"
+                  onclick="toggleTgPhone('${esc(idx.id)}')">${esc(phoneMask)}</span>
+        </div>
       </div>
       <div class="indexer-card-actions">
         <label class="toggle" title="${idx.enabled ? 'Actif' : 'Désactivé'}">
@@ -3031,15 +3036,43 @@ async function loadTelegramIndexers() {
           <span class="toggle-slider"></span>
         </label>
         <button class="btn btn-sm btn-secondary" onclick="testTelegramIndexer('${esc(idx.id)}', this)">Tester</button>
-        <button class="btn btn-sm btn-secondary" onclick="openTelegramChannels('${esc(idx.id)}')">Canaux</button>
+        <button class="btn btn-sm btn-secondary" style="font-size:16px;padding:2px 8px" title="Configurer"
+                onclick="openTelegramConfig('${esc(idx.id)}', ${idx.cache_frequency_hours || 24})">⚙</button>
         <button class="btn btn-sm btn-danger"    onclick="deleteTelegramIndexer('${esc(idx.id)}')">✕</button>
       </div>
     </div>`;
   }).join('');
 
-  // Ouvre la sélection de canaux pour le premier indexer actif si déjà auth
-  const active = indexers.find(i => i.enabled && i.session_string);
-  if (active) openTelegramChannels(active.id, false);
+  // Ouvre la config pour le premier indexer actif authentifié
+  const active = indexers.find(i => i.enabled && i.authenticated);
+  if (active) openTelegramConfig(active.id, active.cache_frequency_hours || 24, false);
+}
+
+function toggleTgPhone(idx_id) {
+  const el = document.getElementById(`tg-phone-${idx_id}`);
+  if (!el) return;
+  const showing = el.dataset.showing === '1';
+  el.textContent = showing ? el.dataset.masked : el.dataset.full;
+  el.dataset.showing = showing ? '0' : '1';
+}
+
+function openTelegramConfig(idx_id, freq, show = true) {
+  openTelegramChannels(idx_id, show);
+  const sel = document.getElementById('tg-cache-frequency');
+  if (sel) sel.value = String(freq || 24);
+  const title = document.getElementById('tg-config-title');
+  if (title) title.textContent = 'Configuration';
+}
+
+async function saveTelegramFrequency(value) {
+  if (!_telegramCurrentIdx) return;
+  await api(`/indexers/telegram/${_telegramCurrentIdx}`, 'PATCH', { cache_frequency_hours: parseInt(value) });
+  const status = document.getElementById('tg-channels-status');
+  if (status) {
+    status.textContent = '✓ Fréquence sauvegardée';
+    status.style.color = 'var(--success)';
+    setTimeout(() => { if (status) status.textContent = ''; }, 2000);
+  }
 }
 
 async function addTelegramIndexer() {

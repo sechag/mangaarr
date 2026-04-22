@@ -637,7 +637,7 @@ def api_list_telegram():
     safe = []
     for idx in indexers:
         s = dict(idx)
-        s.pop("session_string", None)
+        s["authenticated"] = bool(s.pop("session_string", None))
         s.pop("api_hash", None)
         safe.append(s)
     return jsonify({"ok": True, "indexers": safe})
@@ -662,8 +662,9 @@ def api_add_telegram():
         "api_hash":       api_hash,
         "phone":          phone,
         "session_string": "",
-        "channels":       [],   # [{id, name, enabled}]
-        "enabled":        True,
+        "channels":             [],   # [{id, name, enabled}]
+        "enabled":              True,
+        "cache_frequency_hours": 24,
     }
     cfg.setdefault("telegram_indexers", []).append(idx)
     config.save(cfg)
@@ -685,7 +686,7 @@ def api_update_telegram(idx_id):
     cfg = config.load()
     for idx in cfg.get("telegram_indexers", []):
         if idx.get("id") == idx_id:
-            for k in ("name", "phone", "enabled", "channels"):
+            for k in ("name", "phone", "enabled", "channels", "cache_frequency_hours"):
                 if k in d:
                     idx[k] = d[k]
             if "api_id" in d:
