@@ -87,7 +87,8 @@ def scan_library(lib_id: str) -> list:
         for fn in files:
             t = _r.detect_tome(fn)
             n = int(t.lstrip("T").lstrip("0") or "0") if t else None
-            tomes.append({"filename": fn, "numero": n})
+            fp = os.path.join(series_dir, fn)
+            tomes.append({"filename": fn, "numero": n, "scan_type": _cached_scan_type(fp)})
 
         tomes_sorted = sorted(tomes, key=lambda x: x["numero"] or 0)
         first_file   = os.path.join(series_dir, tomes_sorted[0]["filename"]) if tomes_sorted else None
@@ -294,6 +295,63 @@ def _extract_first_image(file_path: str) -> bytes | None:
     except Exception:
         pass
     return None
+
+
+_scan_cache: dict = {}
+
+def _cached_scan_type(file_path: str) -> str:
+    """Retourne le scan_type avec cache mémoire (invalide si mtime change)."""
+    try:
+        mtime = os.path.getmtime(file_path)
+    except OSError:
+        return 'normal'
+    key = file_path
+    cached = _scan_cache.get(key)
+    if cached and cached[0] == mtime:
+        return cached[1]
+    result = detect_scan_type(file_path)
+    _scan_cache[key] = (mtime, result)
+    return result
+
+
+def detect_scan_type(file_path: str) -> str:
+    """
+    Retourne 'dp' si le fichier contient des pages en double-page (largeur > hauteur),
+    'normal' sinon. Basé sur l'échantillonnage de quelques pages internes.
+    """
+    import zipfile, io
+    try:
+        from PIL import Image
+    except ImportError:
+        return 'normal'
+    ext = os.path.splitext(file_path)[1].lower()
+    if ext not in ('.cbz', '.zip'):
+        return 'normal'
+    try:
+        with zipfile.ZipFile(file_path, 'r') as zf:
+            imgs = sorted([
+                n for n in zf.namelist()
+                if os.path.splitext(n)[1].lower() in ('.jpg', '.jpeg', '.png', '.webp')
+                and not os.path.basename(n).startswith('.')
+            ])
+            if len(imgs) < 2:
+                return 'normal'
+            # Échantillonne pages 2, 5, 10 (évite la couverture qui peut être double)
+            indices = [min(1, len(imgs)-1), min(4, len(imgs)-1), min(9, len(imgs)-1)]
+            indices = list(dict.fromkeys(indices))
+            horizontal = 0
+            for idx in indices:
+                try:
+                    data = zf.read(imgs[idx])
+                    img  = Image.open(io.BytesIO(data))
+                    w, h = img.size
+                    if w > h * 1.2:
+                        horizontal += 1
+                except Exception:
+                    pass
+            return 'dp' if horizontal >= 2 else 'normal'
+    except Exception:
+        return 'normal'
 
 
 def clear_cover_cache(series_id: str = None):

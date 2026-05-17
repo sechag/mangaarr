@@ -1948,6 +1948,7 @@ def api_series_detail(series_slug):
         "name":      t["filename"],
         "number":    str(t["numero"]) if t["numero"] else "",
         "thumbnail": f"/api/local/books/{sid}/{t['filename']}/thumbnail",
+        "scan_type": t.get("scan_type", "normal"),
     } for t in tomes]
 
     sources    = config.get("metadata_sources", [])
@@ -1974,6 +1975,8 @@ def api_series_detail(series_slug):
         except Exception:
             pass
 
+    source_name = linked[0].get("name", "MangaDB") if linked else ""
+
     return jsonify({
         "ok":           True,
         "id":           sid,
@@ -1987,6 +1990,7 @@ def api_series_detail(series_slug):
         "mangadbTomes": mangadb_tomes,
         "libraryId":    lib_id,
         "diskPath":     series_info["path"],
+        "source_name":  source_name,
     })
 
 

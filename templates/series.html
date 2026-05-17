@@ -123,10 +123,11 @@ async function loadSeries() {
     return;
   }
 
-  const name  = data.name || '';
-  const meta  = data.mangadb || {};
-  const books = data.books || [];
+  const name       = data.name || '';
+  const meta       = data.mangadb || {};
+  const books      = data.books || [];
   const mangadbTomes = data.mangadbTomes || [];
+  const sourceName = data.source_name || 'MangaDB';
 
   // Titre + breadcrumb
   document.title = `MangaArr — ${name}`;
@@ -186,7 +187,7 @@ async function loadSeries() {
   if (newsUrl) {
     linksHtml += `<a href="${esc(newsUrl)}" target="_blank" rel="noopener" class="hero-ext-link">
       <svg viewBox="0 0 20 20" fill="currentColor"><path d="M11 3a1 1 0 100 2h2.586l-6.293 6.293a1 1 0 101.414 1.414L15 6.414V9a1 1 0 102 0V4a1 1 0 00-1-1h-5z"/><path d="M5 5a2 2 0 00-2 2v8a2 2 0 002 2h8a2 2 0 002-2v-3a1 1 0 10-2 0v3H5V7h3a1 1 0 000-2H5z"/></svg>
-      Manga-News
+      ${esc(sourceName)}
     </a>`;
   }
   if (diskPath) {
@@ -292,6 +293,9 @@ function renderVolumes(ownedBooks, mangadbTomes, totalVF) {
 
       if (owned) {
         // Tome possédé
+        const dpBadge = owned.scan_type === 'dp'
+          ? `<span style="position:absolute;top:4px;left:4px;background:rgba(0,0,0,.65);color:#fff;font-size:9px;padding:1px 5px;border-radius:3px;pointer-events:none">Scan DP</span>`
+          : '';
         cards += `
           <div class="book-card">
             <div class="book-cover-wrap" style="position:relative">
@@ -300,6 +304,7 @@ function renderVolumes(ownedBooks, mangadbTomes, totalVF) {
                    onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
               <div class="book-cover-placeholder" style="display:none">T${padNum(i)}</div>
               <span class="book-num">T${padNum(i)}</span>
+              ${dpBadge}
               <button class="book-edit-btn" title="Modifier ce tome"
                       onclick="openTomeEdit('${esc(owned.name)}', ${i})">⚙</button>
             </div>
@@ -309,6 +314,15 @@ function renderVolumes(ownedBooks, mangadbTomes, totalVF) {
         // Tome manquant
         missingCount++;
         const dbCover = dbTome?.cover || null;
+        const rawDate = dbTome?.date_sortie || dbTome?.date || dbTome?.parution || '';
+        let dateLbl = '';
+        if (rawDate) {
+          try {
+            const d = new Date(rawDate);
+            if (!isNaN(d)) dateLbl = d.toLocaleDateString('fr-FR', { month:'short', year:'numeric' });
+            else dateLbl = String(rawDate).substring(0, 10);
+          } catch { dateLbl = String(rawDate).substring(0, 10); }
+        }
         cards += `
           <div class="book-card book-card-missing">
             <div class="book-cover-wrap missing-wrap">
@@ -318,7 +332,7 @@ function renderVolumes(ownedBooks, mangadbTomes, totalVF) {
               <span class="book-num">T${padNum(i)}</span>
               <div class="missing-banner">Manquant</div>
             </div>
-            <div class="book-name" style="color:var(--danger)">Tome ${i}</div>
+            <div class="book-name" style="color:var(--danger)">Tome ${i}${dateLbl ? `<span style="display:block;font-size:10px;color:var(--text-dim);margin-top:2px">${esc(dateLbl)}</span>` : ''}</div>
           </div>`;
       }
     }

@@ -13,7 +13,7 @@
 <aside id="sidebar">
   <div class="sidebar-logo">
     <svg viewBox="0 0 36 36" fill="none"><rect width="36" height="36" rx="8" fill="#00b5cc"/><text x="18" y="25" text-anchor="middle" font-size="18" font-weight="700" fill="white" font-family="Inter">M</text></svg>
-    <span>MangaArr <small style="font-size:10px;opacity:.6">v0.21</small></span>
+    <span>MangaArr <small style="font-size:10px;opacity:.6">v0.22</small></span>
   </div>
   <nav class="sidebar-nav">
     <div class="nav-section-label">Collection</div>
@@ -675,7 +675,7 @@
               <tr>
                 <th style="width:30px"><input type="checkbox" id="emule-select-all" onchange="toggleSelectAllEmule(this)" title="Tout sélectionner"></th>
                 <th class="queue-th-sortable" onclick="sortQueueBy('series')" style="cursor:pointer;user-select:none">Série <span id="queue-sort-icon">↕</span></th>
-                <th>Fichier</th><th>Tome</th><th>Tag</th><th>Progression</th>
+                <th>Fichier</th><th>Tome</th><th>Tag</th><th>Ajouté</th><th>Progression</th>
               </tr>
             </thead>
             <tbody id="queue-tbody"></tbody>
@@ -702,7 +702,7 @@
               <tr>
                 <th style="width:30px"><input type="checkbox" id="upgrade-select-all" onchange="toggleSelectAllUpgrade(this)" title="Tout sélectionner"></th>
                 <th class="queue-th-sortable" onclick="sortUpgradeBy('series')" style="cursor:pointer;user-select:none">Série <span id="upgrade-sort-icon">↕</span></th>
-                <th>Fichier</th><th>Tome</th><th>Tag</th><th>Progression</th>
+                <th>Fichier</th><th>Tome</th><th>Tag</th><th>Ajouté</th><th>Progression</th>
               </tr>
             </thead>
             <tbody id="queue-tbody-upgrade"></tbody>
@@ -748,7 +748,7 @@
             <tr>
               <th style="width:30px"><input type="checkbox" id="torrent-select-all" onchange="toggleSelectAllTorrent(this)" title="Tout sélectionner"></th>
               <th class="queue-th-sortable" onclick="sortTorrentQueueBy('series')" style="cursor:pointer;user-select:none">Série <span id="torrent-sort-icon">↕</span></th>
-              <th>Release</th><th>Tome(s)</th><th>Type</th><th>Progression</th>
+              <th>Release</th><th>Tome(s)</th><th>Type</th><th>Ajouté</th><th>Progression</th>
             </tr>
           </thead>
           <tbody id="torrent-queue-tbody"></tbody>
@@ -795,7 +795,7 @@
             <tr>
               <th style="width:30px"><input type="checkbox" id="telegram-select-all" onchange="toggleSelectAllTelegram(this)" title="Tout sélectionner"></th>
               <th class="queue-th-sortable" onclick="sortTelegramQueueBy('series')" style="cursor:pointer;user-select:none">Série <span id="telegram-sort-icon">↕</span></th>
-              <th>Fichier</th><th>Tome</th><th>Tag</th><th>Canal</th><th>Progression</th>
+              <th>Fichier</th><th>Tome</th><th>Tag</th><th>Canal</th><th>Ajouté</th><th>Progression</th>
             </tr>
           </thead>
           <tbody id="telegram-queue-tbody"></tbody>

@@ -232,11 +232,12 @@ def scrape_thread_ed2k(session, thread_url):
             time.sleep(DELAY)
             r = session.get(url, timeout=15)
             r.raise_for_status()
+            r.encoding = 'utf-8'
         except Exception as e:
             config.add_log(f"Erreur thread {thread_url}: {e}", "error")
             break
         found = []
-        for pat in [r'ed2k://\|file\|[^"<>\s]+', r'https?://ed2k//?(?:\|file\|)[^"<>\s]+']: 
+        for pat in [r'ed2k://\|file\|[^"<>\s]+', r'https?://ed2k//?(?:\|file\|)[^"<>\s]+']:
             for link in re.findall(pat, r.text):
                 link = link.split('"')[0].split("<")[0].split(">")[0]
                 for pref, repl in [("https://ed2k//","ed2k://"),("http://ed2k//","ed2k://"),
@@ -259,10 +260,10 @@ def scrape_thread_ed2k(session, thread_url):
 
 
 def parse_ed2k(ed2k_url):
-    import renamer as _r
+    import renamer as _r, html as _html
     m = re.search(r"ed2k://\|file\|([^|]+)\|(\d+)\|([A-Fa-f0-9]+)\|", ed2k_url, re.IGNORECASE)
     if m:
-        filename = unquote(m.group(1))
+        filename = _html.unescape(unquote(m.group(1)))
         return {
             "filename":    filename,
             "filesize":    int(m.group(2)),

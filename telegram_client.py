@@ -353,7 +353,7 @@ def search_files(cfg: dict, query: str, channel_ids: list) -> dict:
     chan_errors  = []
     chan_building = []
 
-    # ── Canaux avec cache frais : recherche locale ────────────────────────────
+    # ── Canaux avec cache frais ou périmé : recherche locale + rebuild si périmé ──
     ids_need_scan = []
     for ch_id in channel_ids:
         ch_id = str(ch_id)
@@ -362,7 +362,8 @@ def search_files(cfg: dict, query: str, channel_ids: list) -> dict:
                 chan_building.append(ch_id)
                 continue
         cache = _load_cache(ch_id)
-        if cache and _cache_is_fresh(cache, cache_ttl):
+        if cache and cache.get("files"):
+            is_fresh = _cache_is_fresh(cache, cache_ttl)
             ch_name = cache.get("channel_name", ch_id)
             for entry in cache.get("files", []):
                 fname = entry.get("filename", "")
@@ -386,6 +387,11 @@ def search_files(cfg: dict, query: str, channel_ids: list) -> dict:
                     "filehash":     fhash,
                     "tag":          _detect_tag(fname),
                 })
+            if not is_fresh:
+                # Cache périmé : déclenche un rebuild en arrière-plan
+                chan_building.append(ch_id)
+                chan_errors.append(f"Cache périmé pour {ch_name} — actualisation en arrière-plan")
+                build_channel_cache(cfg, [ch_id])
         else:
             ids_need_scan.append(ch_id)
 

@@ -61,6 +61,7 @@ def extract_ed2k_from_page(url: str, mybbuser: str) -> dict:
     try:
         r = session.get(url, timeout=15, allow_redirects=True)
         r.raise_for_status()
+        r.encoding = 'utf-8'
         html_text = r.text
     except Exception as e:
         return {"ok": False, "links": [], "message": f"Erreur réseau : {e}"}

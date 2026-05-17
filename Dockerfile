@@ -41,8 +41,6 @@ ENV MANGAARR_CACHE=/data/cache
 ENV MANGAARR_EMULE=/data/emulecollections
 # MANGAARR_INCOMING_INTERVAL : fréquence du scan Incoming en secondes (défaut: 60)
 ENV MANGAARR_INCOMING_INTERVAL=60
-# MANGAARR_INCOMING_INTERVAL : fréquence scan Incoming en secondes (défaut: 60)
-ENV MANGAARR_INCOMING_INTERVAL=60
 
 EXPOSE 7474
 

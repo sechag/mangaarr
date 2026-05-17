@@ -69,6 +69,14 @@ function esc(s) {
   return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 
+function _fmtDate(iso) {
+  if (!iso) return '—';
+  try {
+    const d = new Date(iso);
+    return d.toLocaleDateString('fr-FR', { day:'2-digit', month:'2-digit', year:'2-digit' });
+  } catch { return '—'; }
+}
+
 // ══════════════════════════════════════════════════════════
 // KOMGA STATUS SIDEBAR
 // ══════════════════════════════════════════════════════════
@@ -1166,6 +1174,7 @@ function _renderQueueRow(item, _itemIdx) {
       <td class="queue-filename" title="${esc(item.filename)}">${esc((item.filename||'').substring(0,60))}${(item.filename||'').length>60?'…':''}</td>
       <td class="queue-tome">${tomeNum}${editTomeBtn}</td>
       <td><span style="font-size:11px;color:var(--text-dim)">${esc(item.tag||'')}</span></td>
+      <td style="font-size:11px;color:var(--text-dim);white-space:nowrap">${_fmtDate(item.added_at)}</td>
       <td style="display:flex;align-items:center;gap:6px;flex-wrap:wrap"><span class="status-pill ${statusCls}">${statusLbl}</span>${emulePendingBtn}${infoBtn}</td>
     </tr>`;
 }
@@ -2503,6 +2512,7 @@ function renderTorrentQueueTable(items) {
       <td class="queue-filename">${releaseCell}</td>
       <td class="queue-tome">${tomes}${editBtn}</td>
       <td><span class="release-badge ${vtype}">${typeLabel[vtype]||vtype}</span></td>
+      <td style="font-size:11px;color:var(--text-dim);white-space:nowrap">${_fmtDate(item.added_at)}</td>
       <td style="display:flex;align-items:center;gap:6px;flex-wrap:wrap"><span class="status-pill ${sCls}">${sLbl}</span>${pendingBtn}${infoBtn}${forceBtn}</td>
     </tr>`;
   }).join('');
@@ -3315,6 +3325,7 @@ function renderTelegramQueueTable(items) {
       <td>${esc(item.tome_number || '?')}</td>
       <td>${item.tag && item.tag !== 'Notag' ? `<span style="background:var(--accent-dim,#1a3a3a);color:var(--accent);border-radius:4px;padding:1px 5px;font-size:10px">${esc(item.tag)}</span>` : '<span style="color:var(--text-dim);font-size:11px">Notag</span>'}</td>
       <td>${ch}</td>
+      <td style="font-size:11px;color:var(--text-dim);white-space:nowrap">${_fmtDate(item.added_at)}</td>
       <td style="color:${statusColor};font-size:12px">${statusLabel}</td>
     </tr>`;
   }).join('');
