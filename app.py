@@ -1884,7 +1884,7 @@ def api_series():
         src_id  = linked[0].get("id")
 
         def _enrich(lid, series_lst, s_id, s_url):
-            import time, requests, pandas as pd
+            import requests, pandas as pd
             cache_mod._enriching[lid] = True
             try:
                 csv_df = None
@@ -1898,7 +1898,6 @@ def api_series():
                     pass
                 for s in series_lst:
                     existing_meta = cache_mod.get_series_meta(lid, s["id"])
-                    # Déjà associé/dissocié manuellement → ne pas écraser
                     if existing_meta is not None:
                         continue
                     if csv_df is not None:
@@ -1909,9 +1908,7 @@ def api_series():
                     cache_mod.set_series_meta(lid, s["id"], meta)
                     with _ev_lock:
                         _enrich_events.setdefault(lid, []).append({"series_id": s["id"], "meta": meta})
-                    time.sleep(0.02)
             finally:
-                import threading as _t
                 with cache_mod._enrich_lock:
                     cache_mod._enriching[lid] = False
 
@@ -1943,12 +1940,13 @@ def api_series_detail(series_slug):
     name   = series_info["name"]
     tomes  = series_info["tomes"]
 
+    series_path = series_info["path"]
     books_data = [{
         "id":        t["filename"],
         "name":      t["filename"],
         "number":    str(t["numero"]) if t["numero"] else "",
         "thumbnail": f"/api/local/books/{sid}/{t['filename']}/thumbnail",
-        "scan_type": t.get("scan_type", "normal"),
+        "scan_type": lib_mgr._cached_scan_type(os.path.join(series_path, t["filename"])),
     } for t in tomes]
 
     sources    = config.get("metadata_sources", [])

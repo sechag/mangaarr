@@ -14,7 +14,15 @@
   <div class="sidebar-logo">
     <svg viewBox="0 0 36 36" fill="none"><rect width="36" height="36" rx="8" fill="#00b5cc"/><text x="18" y="25" text-anchor="middle" font-size="18" font-weight="700" fill="white" font-family="Inter">M</text></svg>
     <span>MangaArr <small style="font-size:10px;opacity:.6">v0.22</small></span>
+    <div id="enrich-indicator" style="display:none;margin-left:auto;display:none;align-items:center;gap:5px" title="Chargement des métadonnées…">
+      <svg id="enrich-spinner" viewBox="0 0 24 24" fill="none" stroke="#00b5cc" stroke-width="2.5" stroke-linecap="round"
+           style="width:16px;height:16px;flex-shrink:0;animation:spin 1s linear infinite">
+        <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/>
+      </svg>
+      <span id="enrich-label" style="font-size:10px;color:#00b5cc;white-space:nowrap"></span>
+    </div>
   </div>
+  <style>@keyframes spin{to{transform:rotate(360deg)}}</style>
   <nav class="sidebar-nav">
     <div class="nav-section-label">Collection</div>
     <a class="nav-item active" data-page="collection-local" href="#">

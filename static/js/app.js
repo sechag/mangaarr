@@ -832,10 +832,27 @@ function startEnrichPoll(libraryId) {
   _currentLibraryId = libraryId;
   if (_enrichPollInterval) clearInterval(_enrichPollInterval);
   _enrichPollInterval = setInterval(() => pollEnrichEvents(libraryId), 1500);
+  _updateEnrichIndicator(true);
 }
 
 function stopEnrichPoll() {
   if (_enrichPollInterval) { clearInterval(_enrichPollInterval); _enrichPollInterval = null; }
+  _updateEnrichIndicator(false);
+}
+
+function _updateEnrichIndicator(active, loaded, total) {
+  const el  = document.getElementById('enrich-indicator');
+  const lbl = document.getElementById('enrich-label');
+  if (!el) return;
+  el.style.display = active ? 'flex' : 'none';
+  if (active && lbl) {
+    if (loaded !== undefined && total !== undefined && total > 0) {
+      const pct = Math.round((loaded / total) * 100);
+      lbl.textContent = `${pct}%`;
+    } else {
+      lbl.textContent = '';
+    }
+  }
 }
 
 async function pollEnrichEvents(libraryId) {
@@ -846,6 +863,10 @@ async function pollEnrichEvents(libraryId) {
     for (const ev of events) {
       applyEnrichEvent(ev.series_id, ev.meta);
     }
+
+    const loaded = _allSeries.filter(s => s.metaLoaded).length;
+    const total  = _allSeries.length;
+    _updateEnrichIndicator(d.enriching, loaded, total);
 
     if (!d.enriching) {
       stopEnrichPoll();

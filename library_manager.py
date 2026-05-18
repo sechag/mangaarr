@@ -87,8 +87,7 @@ def scan_library(lib_id: str) -> list:
         for fn in files:
             t = _r.detect_tome(fn)
             n = int(t.lstrip("T").lstrip("0") or "0") if t else None
-            fp = os.path.join(series_dir, fn)
-            tomes.append({"filename": fn, "numero": n, "scan_type": _cached_scan_type(fp)})
+            tomes.append({"filename": fn, "numero": n})
 
         tomes_sorted = sorted(tomes, key=lambda x: x["numero"] or 0)
         first_file   = os.path.join(series_dir, tomes_sorted[0]["filename"]) if tomes_sorted else None
