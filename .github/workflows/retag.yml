@@ -14,7 +14,7 @@ jobs:
         uses: imjasonh/setup-crane@v0.4
 
       - name: Log in to GHCR
-        run: echo "${{ secrets.GITHUB_TOKEN }}" | crane auth login ghcr.io -u ${{ github.actor }} --password-stdin
+        run: echo "${{ secrets.GHCR_TOKEN }}" | crane auth login ghcr.io -u ${{ github.actor }} --password-stdin
 
       - name: Retag old digest as latest
         run: |
@@ -22,6 +22,6 @@ jobs:
 
       - name: Delete new version via GitHub API
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.GHCR_TOKEN }}
         run: |
           gh api --method DELETE /user/packages/container/mangaarr/versions/891316186
