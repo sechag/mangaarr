@@ -12,9 +12,6 @@ build/
 data/
 rename_history/
 emulecollections/
-.cache/
-*.log
-*.log.json
 
 # Environnements virtuels
 .venv/
@@ -30,3 +27,6 @@ env/
 # OS
 .DS_Store
 Thumbs.db
+
+# Artefact de refactor (dossier mal nommé)
+"{templates,static"
