@@ -1,0 +1,23 @@
+{
+  "mybbuser": "",
+  "download_dir": "",
+  "libraries": [],
+  "media_management": {
+    "auto_rename": true,
+    "auto_convert_cbr": true,
+    "auto_convert_pdf": true,
+    "auto_replace": true,
+    "emulecollection_as_txt": false
+  },
+  "profiles": {
+    "tags": [],
+    "must_contain": [],
+    "must_not_contain": []
+  },
+  "metadata_sources": [],
+  "scrape_interval_hours": 24,
+  "meta_sync_interval_hours": 72,
+  "watcher_interval": 0,
+  "torznab_indexers": [],
+  "download_clients": []
+}
