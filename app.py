@@ -122,6 +122,71 @@ def api_test_indexer():
 
 
 # ════════════════════════════════════════════════════════
+# INDEXERS — EBDZ SOURCES (catégories à scraper)
+# ════════════════════════════════════════════════════════
+
+@app.route("/api/ebdz/sources", methods=["GET"])
+def api_list_ebdz_sources():
+    return jsonify({"ok": True, "sources": ebdz_scraper.get_sources()})
+
+
+@app.route("/api/ebdz/sources", methods=["POST"])
+def api_add_ebdz_source():
+    d    = request.json or {}
+    name = d.get("name", "").strip()
+    url  = d.get("url", "").strip()
+    if not name or not url:
+        return jsonify({"ok": False, "message": "name et url requis"})
+    if not (url.startswith("https://ebdz.net") or url.startswith("http://ebdz.net")):
+        return jsonify({"ok": False, "message": "URL doit commencer par https://ebdz.net"})
+
+    cfg = config.load()
+    sources = cfg.setdefault("ebdz_sources", [])
+    if not sources:
+        sources.append({
+            "id":          "manga",
+            "name":        "Mangas",
+            "url":         "https://ebdz.net/forum/forumdisplay.php?fid=29",
+            "library_ids": [],
+            "enabled":     True,
+        })
+
+    src = {
+        "id":          str(uuid.uuid4())[:8],
+        "name":        name,
+        "url":         url,
+        "library_ids": d.get("library_ids", []),
+        "enabled":     True,
+    }
+    sources.append(src)
+    config.save(cfg)
+    return jsonify({"ok": True, "source": src})
+
+
+@app.route("/api/ebdz/sources/<src_id>", methods=["PATCH"])
+def api_update_ebdz_source(src_id):
+    d   = request.json or {}
+    cfg = config.load()
+    for src in cfg.get("ebdz_sources", []):
+        if src.get("id") == src_id:
+            for k in ("name", "url", "library_ids", "enabled"):
+                if k in d:
+                    src[k] = d[k]
+            config.save(cfg)
+            return jsonify({"ok": True, "source": src})
+    return jsonify({"ok": False, "message": "Source introuvable"})
+
+
+@app.route("/api/ebdz/sources/<src_id>", methods=["DELETE"])
+def api_delete_ebdz_source(src_id):
+    cfg = config.load()
+    before = len(cfg.get("ebdz_sources", []))
+    cfg["ebdz_sources"] = [s for s in cfg.get("ebdz_sources", []) if s.get("id") != src_id]
+    config.save(cfg)
+    return jsonify({"ok": len(cfg["ebdz_sources"]) < before})
+
+
+# ════════════════════════════════════════════════════════
 # INDEXERS — TORZNAB
 # ════════════════════════════════════════════════════════
 
@@ -1407,7 +1472,8 @@ def api_series_search_ebdz(series_slug):
     if not name:
         return jsonify({"ok": False, "results": [], "message": "Nom requis"})
 
-    thread = ebdz_scraper.find_thread_for_series(name)
+    lib_id = info.get("lib_id") if info else None
+    thread = ebdz_scraper.find_thread_for_series(name, lib_id=lib_id)
     if not thread:
         return jsonify({"ok": False, "results": [],
                         "message": f"Aucun thread trouvé pour '{name}'"})
@@ -1629,7 +1695,8 @@ def api_search_tomes(series_slug):
         if not _ebdz.check_login(session):
             return jsonify({"ok": False, "message": "Cookie ebdz invalide", "tomes": []})
 
-        thread = _ebdz.find_thread_for_series(q)
+        lib_id = series_info.get("lib_id") if series_info else None
+        thread = _ebdz.find_thread_for_series(q, lib_id=lib_id)
         if not thread:
             return jsonify({"ok": False, "message": f"Série '{q}' non trouvée sur ebdz", "tomes": []})
 
@@ -2445,18 +2512,20 @@ def api_ebdz_state():
 
 @app.route("/api/ebdz/scrape", methods=["POST"])
 def api_ebdz_scrape():
-    d    = request.json or {}
-    mode = d.get("mode", "partial")          # "full" | "partial"
-    n    = int(d.get("max_pages", 3))
-    ok   = ebdz_scraper.start_scrape(mode=mode, max_pages=n)
+    d         = request.json or {}
+    mode      = d.get("mode", "partial")     # "full" | "partial"
+    n         = int(d.get("max_pages", 3))
+    source_id = d.get("source_id")           # None = toutes les sources
+    ok        = ebdz_scraper.start_scrape(mode=mode, max_pages=n, source_id=source_id)
     return jsonify({"ok": ok, "message": "Scrape lancé" if ok else "Scrape déjà en cours"})
 
 @app.route("/api/ebdz/threads")
 def api_ebdz_threads():
-    page  = int(request.args.get("page", 1))
-    size  = int(request.args.get("size", 50))
-    q     = request.args.get("q", "").strip().lower()
-    threads = ebdz_scraper.get_all_threads()
+    page      = int(request.args.get("page", 1))
+    size      = int(request.args.get("size", 50))
+    q         = request.args.get("q", "").strip().lower()
+    source_id = request.args.get("source_id") or None
+    threads = ebdz_scraper.get_all_threads(source_id=source_id)
     if q:
         import unicodedata
         def _norm(t):

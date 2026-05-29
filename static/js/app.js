@@ -1552,10 +1552,10 @@ async function loadIndexerConfig() {
   const d = await api('/config');
   if (d.mybbuser) document.getElementById('mybbuser-input').value = d.mybbuser;
   if (d.download_dir) document.getElementById('rename-path').value = d.download_dir;
-  // Assure que le bon onglet est affiché
   switchIndexerTab(_indexerTab || 'ebdz');
   await refreshEbdzState();
   await loadScrapeInterval();
+  await loadEbdzSources();
 }
 
 async function refreshEbdzState() {
@@ -1643,6 +1643,117 @@ async function startEbdzScrape(mode) {
   } else {
     status.textContent = d.message;
     status.className = 'status-msg error';
+  }
+}
+
+// ── Sources ebdz ──────────────────────────────────────────────────────────
+
+async function loadEbdzSources() {
+  const el = document.getElementById('ebdz-sources-list');
+  if (!el) return;
+  await _ensureLibraries();
+  const d = await api('/ebdz/sources');
+  const sources = d.sources || [];
+  if (!sources.length) {
+    el.innerHTML = '<p style="color:var(--text-dim);font-size:12px">Aucune source configurée.</p>';
+    return;
+  }
+  el.innerHTML = sources.map(src => {
+    const libChecks = _librariesForUI.map(lib => `
+      <label style="display:flex;align-items:center;gap:4px;font-size:11px;cursor:pointer;white-space:nowrap">
+        <input type="checkbox" class="ebdz-src-lib" data-src-id="${esc(src.id)}" data-lib-id="${esc(lib.id)}"
+               ${(src.library_ids || []).includes(lib.id) ? 'checked' : ''}
+               onchange="saveEbdzSourceLibraries('${esc(src.id)}')">
+        ${esc(lib.name)}
+      </label>`).join('');
+
+    const threadsCount = `<span class="status-msg" id="ebdz-src-count-${esc(src.id)}" style="font-size:11px;color:var(--text-dim)"></span>`;
+
+    return `<div class="indexer-card" style="flex-direction:column;align-items:flex-start;gap:8px">
+      <div style="display:flex;align-items:center;gap:10px;width:100%">
+        <label class="toggle" title="${src.enabled ? 'Actif' : 'Désactivé'}">
+          <input type="checkbox" ${src.enabled ? 'checked' : ''}
+                 onchange="toggleEbdzSource('${esc(src.id)}', this.checked)">
+          <span class="toggle-slider"></span>
+        </label>
+        <div style="flex:1;min-width:0">
+          <div class="indexer-card-name">${esc(src.name)}</div>
+          <div class="indexer-card-url" style="font-size:11px;color:var(--text-dim)">${esc(src.url)}</div>
+        </div>
+        <div style="display:flex;gap:6px;flex-shrink:0">
+          <button class="btn btn-sm btn-secondary" onclick="startEbdzScrapeSource('${esc(src.id)}','${esc(src.name)}','partial')">↺ Partiel</button>
+          <button class="btn btn-sm btn-secondary" onclick="startEbdzScrapeSource('${esc(src.id)}','${esc(src.name)}','full')">↺ Complet</button>
+          ${src.id !== 'manga' ? `<button class="btn btn-sm btn-danger" onclick="deleteEbdzSource('${esc(src.id)}','${esc(src.name)}')">✕</button>` : ''}
+        </div>
+      </div>
+      ${_librariesForUI.length ? `<div style="display:flex;flex-wrap:wrap;gap:8px;padding-left:44px">
+        <span style="font-size:11px;color:var(--text-dim);white-space:nowrap">Librairies :</span>
+        ${libChecks}
+      </div>` : ''}
+    </div>`;
+  }).join('');
+}
+
+async function addEbdzSource() {
+  const status = document.getElementById('ebdz-src-add-status');
+  const name   = document.getElementById('ebdz-src-name').value.trim();
+  const url    = document.getElementById('ebdz-src-url').value.trim();
+  if (!name || !url) {
+    status.textContent = 'Nom et URL requis'; status.style.color = 'var(--danger)'; return;
+  }
+  const d = await api('/ebdz/sources', 'POST', { name, url });
+  if (d.ok) {
+    status.textContent = '✓ Source ajoutée'; status.style.color = 'var(--success)';
+    document.getElementById('ebdz-src-name').value = '';
+    document.getElementById('ebdz-src-url').value = '';
+    setTimeout(() => { status.textContent = ''; }, 2000);
+    loadEbdzSources();
+  } else {
+    status.textContent = d.message || 'Erreur'; status.style.color = 'var(--danger)';
+  }
+}
+
+async function deleteEbdzSource(id, name) {
+  if (!confirm(`Supprimer la source "${name}" ?`)) return;
+  await api(`/ebdz/sources/${id}`, 'DELETE');
+  loadEbdzSources();
+}
+
+async function toggleEbdzSource(id, enabled) {
+  await api(`/ebdz/sources/${id}`, 'PATCH', { enabled });
+}
+
+async function saveEbdzSourceLibraries(srcId) {
+  const libCbs = document.querySelectorAll(`.ebdz-src-lib[data-src-id="${srcId}"]`);
+  const library_ids = [...libCbs].filter(c => c.checked).map(c => c.dataset.libId);
+  await api(`/ebdz/sources/${srcId}`, 'PATCH', { library_ids });
+}
+
+async function startEbdzScrapeSource(sourceId, sourceName, mode) {
+  const status = document.getElementById('ebdz-scrape-status');
+  if (status) {
+    status.textContent = `Scrape ${mode} [${sourceName}] lancé…`;
+    status.className = 'status-msg';
+  }
+  const d = await api('/ebdz/scrape', 'POST', {
+    mode,
+    source_id: sourceId,
+    max_pages: mode === 'partial' ? 3 : 9999,
+  });
+  if (d.ok) {
+    if (status) { status.textContent = d.message; status.className = 'status-msg ok'; }
+    if (_ebdzPollInterval) clearInterval(_ebdzPollInterval);
+    _ebdzPollInterval = setInterval(async () => {
+      const s = await api('/ebdz/state');
+      renderEbdzState(s);
+      if (!s.running) {
+        clearInterval(_ebdzPollInterval);
+        _ebdzPollInterval = null;
+        if (status) { status.textContent = `Terminé ✓ — ${s.threads} forums indexés`; status.className = 'status-msg ok'; }
+      }
+    }, 1500);
+  } else if (status) {
+    status.textContent = d.message; status.className = 'status-msg error';
   }
 }
 
@@ -2234,6 +2345,7 @@ function switchIndexerTab(tab) {
     if (panel) panel.style.display = t === tab ? '' : 'none';
     if (btn)   btn.classList.toggle('active', t === tab);
   });
+  if (tab === 'ebdz')     loadEbdzSources();
   if (tab === 'torznab')  loadTorznabIndexers();
   if (tab === 'telegram') loadTelegramIndexers();
 }

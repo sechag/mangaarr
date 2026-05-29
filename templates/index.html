@@ -179,13 +179,41 @@
         </div>
       </div>
       <div class="settings-card">
+        <h2>Sources de scrape ebdz</h2>
+        <p class="hint">
+          Définissez les catégories ebdz à indexer (ex : Mangas <code>fid=29</code>, BD <code>fid=23</code>).
+          Liez chaque source à une ou plusieurs librairies pour que la recherche ebdz reste dans le bon catalogue.
+        </p>
+        <div id="ebdz-sources-list" style="margin-bottom:12px"></div>
+
+        <!-- Formulaire ajout source -->
+        <details style="margin-top:8px">
+          <summary style="cursor:pointer;font-size:13px;font-weight:600;color:var(--accent)">+ Ajouter une source</summary>
+          <div style="margin-top:10px;display:flex;flex-direction:column;gap:8px">
+            <div class="form-row">
+              <label>Nom</label>
+              <input type="text" id="ebdz-src-name" class="text-input" placeholder="ex : BD">
+            </div>
+            <div class="form-row">
+              <label>URL du forum</label>
+              <input type="text" id="ebdz-src-url" class="text-input" placeholder="https://ebdz.net/forum/forumdisplay.php?fid=23">
+            </div>
+            <div class="form-actions">
+              <button class="btn btn-primary btn-sm" onclick="addEbdzSource()">Ajouter</button>
+              <span id="ebdz-src-add-status" class="status-msg"></span>
+            </div>
+          </div>
+        </details>
+      </div>
+
+      <div class="settings-card">
         <h2>Scrape ebdz.net</h2>
-        <p class="hint">Récupère la liste des forums manga d'ebdz. Le scrape partiel (3 pages) se lance automatiquement toutes les 12h.</p>
+        <p class="hint">Lance un scrape sur toutes les sources actives. Le scrape partiel (3 pages/source) tourne aussi automatiquement.</p>
         <div id="ebdz-state-card" class="ebdz-state-card"></div>
         <div class="form-actions" style="margin-top:12px">
           <button class="btn btn-primary" onclick="startEbdzScrape('partial')">
             <svg viewBox="0 0 20 20" fill="currentColor" style="width:14px;height:14px"><path fill-rule="evenodd" d="M4 2a1 1 0 011 1v2.101a7.002 7.002 0 0111.601 2.566 1 1 0 11-1.885.666A5.002 5.002 0 005.999 7H9a1 1 0 010 2H4a1 1 0 01-1-1V3a1 1 0 011-1z" clip-rule="evenodd"/></svg>
-            Scrape partiel (3 pages)
+            Scrape partiel (3 pages/source)
           </button>
           <button class="btn btn-secondary" onclick="startEbdzScrape('full')">Scrape complet</button>
           <span id="ebdz-scrape-status" class="status-msg"></span>

@@ -28,6 +28,16 @@ DEFAULTS = {
     "scrape_interval_hours":    24,
     "meta_sync_interval_hours": 72,
     "watcher_interval":         0,
+    # Sources de scrape ebdz : [{id, name, url, library_ids, enabled}]
+    "ebdz_sources": [
+        {
+            "id":          "manga",
+            "name":        "Mangas",
+            "url":         "https://ebdz.net/forum/forumdisplay.php?fid=29",
+            "library_ids": [],
+            "enabled":     True,
+        }
+    ],
     # Indexers Torznab : [{id, name, url, apikey, enabled}]
     "torznab_indexers": [],
     # Clients de téléchargement : [{id, name, type, host, port, username, password, category, save_path, enabled}]
