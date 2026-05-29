@@ -641,6 +641,9 @@
           <button id="tab-queue-torrent"  class="tab-pill"        onclick="switchQueueTab('torrent')">Torrent <span id="torrent-queue-badge" class="nav-badge" style="display:none;background:var(--accent);color:#000">0</span></button>
           <button id="tab-queue-telegram" class="tab-pill"        onclick="switchQueueTab('telegram')">Telegram <span id="telegram-queue-badge" class="nav-badge" style="display:none;background:#0088cc;color:#fff">0</span></button>
         </div>
+        <select id="queue-lib-filter" class="select-input" onchange="onQueueLibFilterChange()" style="min-width:160px;max-width:240px" title="Filtrer par librairie">
+          <option value="">Toutes les librairies</option>
+        </select>
         <span id="queue-dest-label" class="status-msg" style="font-size:11px;color:var(--text-dim)"></span>
       </div>
     </div>
@@ -683,7 +686,9 @@
               <tr>
                 <th style="width:30px"><input type="checkbox" id="emule-select-all" onchange="toggleSelectAllEmule(this)" title="Tout sélectionner"></th>
                 <th class="queue-th-sortable" onclick="sortQueueBy('series')" style="cursor:pointer;user-select:none">Série <span id="queue-sort-icon">↕</span></th>
-                <th>Fichier</th><th>Tome</th><th>Tag</th><th>Ajouté</th><th>Progression</th>
+                <th>Fichier</th><th>Tome</th><th>Tag</th>
+                <th class="queue-th-sortable" onclick="sortQueueBy('added_at')" style="cursor:pointer;user-select:none">Ajouté <span id="queue-added-icon">↕</span></th>
+                <th class="queue-th-sortable" onclick="sortQueueBy('status')" style="cursor:pointer;user-select:none">Progression <span id="queue-status-icon">↕</span></th>
               </tr>
             </thead>
             <tbody id="queue-tbody"></tbody>
@@ -710,7 +715,9 @@
               <tr>
                 <th style="width:30px"><input type="checkbox" id="upgrade-select-all" onchange="toggleSelectAllUpgrade(this)" title="Tout sélectionner"></th>
                 <th class="queue-th-sortable" onclick="sortUpgradeBy('series')" style="cursor:pointer;user-select:none">Série <span id="upgrade-sort-icon">↕</span></th>
-                <th>Fichier</th><th>Tome</th><th>Tag</th><th>Ajouté</th><th>Progression</th>
+                <th>Fichier</th><th>Tome</th><th>Tag</th>
+                <th class="queue-th-sortable" onclick="sortUpgradeBy('added_at')" style="cursor:pointer;user-select:none">Ajouté <span id="upgrade-added-icon">↕</span></th>
+                <th class="queue-th-sortable" onclick="sortUpgradeBy('status')" style="cursor:pointer;user-select:none">Progression <span id="upgrade-status-icon">↕</span></th>
               </tr>
             </thead>
             <tbody id="queue-tbody-upgrade"></tbody>
@@ -756,7 +763,9 @@
             <tr>
               <th style="width:30px"><input type="checkbox" id="torrent-select-all" onchange="toggleSelectAllTorrent(this)" title="Tout sélectionner"></th>
               <th class="queue-th-sortable" onclick="sortTorrentQueueBy('series')" style="cursor:pointer;user-select:none">Série <span id="torrent-sort-icon">↕</span></th>
-              <th>Release</th><th>Tome(s)</th><th>Type</th><th>Ajouté</th><th>Progression</th>
+              <th>Release</th><th>Tome(s)</th><th>Type</th>
+              <th class="queue-th-sortable" onclick="sortTorrentQueueBy('added_at')" style="cursor:pointer;user-select:none">Ajouté <span id="torrent-added-icon">↕</span></th>
+              <th class="queue-th-sortable" onclick="sortTorrentQueueBy('status')" style="cursor:pointer;user-select:none">Progression <span id="torrent-status-icon">↕</span></th>
             </tr>
           </thead>
           <tbody id="torrent-queue-tbody"></tbody>
@@ -803,7 +812,9 @@
             <tr>
               <th style="width:30px"><input type="checkbox" id="telegram-select-all" onchange="toggleSelectAllTelegram(this)" title="Tout sélectionner"></th>
               <th class="queue-th-sortable" onclick="sortTelegramQueueBy('series')" style="cursor:pointer;user-select:none">Série <span id="telegram-sort-icon">↕</span></th>
-              <th>Fichier</th><th>Tome</th><th>Tag</th><th>Canal</th><th>Ajouté</th><th>Progression</th>
+              <th>Fichier</th><th>Tome</th><th>Tag</th><th>Canal</th>
+              <th class="queue-th-sortable" onclick="sortTelegramQueueBy('added_at')" style="cursor:pointer;user-select:none">Ajouté <span id="telegram-added-icon">↕</span></th>
+              <th class="queue-th-sortable" onclick="sortTelegramQueueBy('status')" style="cursor:pointer;user-select:none">Progression <span id="telegram-status-icon">↕</span></th>
             </tr>
           </thead>
           <tbody id="telegram-queue-tbody"></tbody>
