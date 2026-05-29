@@ -45,7 +45,7 @@ KNOWN_TAGS = [
     "Crossread+", "Crossread", "ScanTrad",
     "Di3an", "Pitoufos", "NRC ALLIANCE",
     "OpazeSenpai", "slaine", "NoFace696",
-    "FireLion", "Moi",
+    "FireLion", "Moi", "iBooker",
 ]
 
 def load() -> dict:

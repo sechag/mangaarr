@@ -142,6 +142,11 @@ def fetch_and_rewrite(url: str, mybbuser: str) -> dict:
     # Réécrit les liens <a href>
     for a in soup.find_all("a", href=True):
         href = a["href"].strip()
+
+        # Ancre pure (#contenant1, #contenant2…) → garde tel quel pour navigation intra-page
+        if href.startswith('#'):
+            continue
+
         try:
             abs_url = urljoin(final_url, href)
         except ValueError:
@@ -171,10 +176,16 @@ def fetch_and_rewrite(url: str, mybbuser: str) -> dict:
                           ";color:#f59e0b!important;font-weight:bold;cursor:pointer")
             a["title"] = "Ajouter à la queue MangaArr"
         elif abs_url.startswith(EBDZ_BASE):
-            # Lien interne → passe par le proxy
-            # safe=':/' garde https:// lisible mais encode ?,=,& qui casseraient
-            # le parsing de la query string du proxy (/api/ebdz-proxy?url=...)
-            a["href"] = f"{PROXY_PATH}?url={quote(abs_url, safe=':/')}"
+            frag_idx = abs_url.find('#')
+            if frag_idx != -1:
+                # Lien interne avec fragment → envoie l'URL complète au parent via postMessage
+                # pour que le parent charge la page et fasse défiler jusqu'à l'ancre
+                safe_full = abs_url.replace("\\", "\\\\").replace("'", "\\'")
+                a["href"] = "#"
+                a["onclick"] = f"parent.postMessage({{type:'navigate',url:'{safe_full}'}}, '*'); return false;"
+            else:
+                # Lien interne sans fragment → passe par le proxy
+                a["href"] = f"{PROXY_PATH}?url={quote(abs_url, safe=':/')}"
             if a.get("target"):
                 del a["target"]
         else:
@@ -214,10 +225,15 @@ def fetch_and_rewrite(url: str, mybbuser: str) -> dict:
         else:
             form["action"] = f"{PROXY_PATH}?url={quote(abs_action, safe=':/')}"
 
-    # Injecte un script qui notifie le parent de l'URL courante
+    # Injecte un script qui notifie le parent de l'URL courante et gère le scroll par ancre
     inject = soup.new_tag("script")
     inject.string = (
         f"try{{ parent.postMessage({{type:'nav',url:{repr(final_url)}}}, '*'); }}catch(e){{}}"
+        "window.addEventListener('message',function(e){"
+        "if(e.data&&e.data.type==='scrollTo'&&e.data.anchor){"
+        "try{var el=document.querySelector(e.data.anchor);if(el)el.scrollIntoView({behavior:'smooth',block:'start'});}catch(_){}"
+        "}"
+        "});"
     )
     if soup.body:
         soup.body.append(inject)

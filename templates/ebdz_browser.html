@@ -403,6 +403,14 @@
   <!-- Left sidebar -->
   <div id="left-sidebar">
 
+    <!-- Library selector -->
+    <div class="sb-section">
+      <div class="sb-label">Librairie</div>
+      <select id="sb-library-sel" class="sb-input" onchange="filterSidebarByLib()" style="width:100%">
+        <option value="">Toutes les librairies</option>
+      </select>
+    </div>
+
     <!-- Active series -->
     <div class="sb-section">
       <div class="sb-label">Série active</div>
@@ -513,9 +521,12 @@
   const HOME_URL = {{ home_url | tojson }};
 
   // ── state ──
-  let _history    = [];
-  let _ed2kLinks  = [];   // [{url, filename, tome_number}]
-  let _activeSeries = null;
+  let _history       = [];
+  let _ed2kLinks     = [];   // [{url, filename, tome_number}]
+  let _activeSeries  = null;
+  let _pendingAnchor = null; // fragment à scroller après chargement de l'iframe
+  let _allSeries     = [];
+  let _allSeriesByLib = {};  // lib_id → series[]
 
   // ── DOM refs ──
   const frame     = document.getElementById('browser-frame');
@@ -535,9 +546,10 @@
   // ════════════════════════════════
   function navTo(url) {
     if (!url) return;
-    // Strip le fragment (#ancre) — non transmis au serveur HTTP
     const hashIdx = url.indexOf('#');
     const cleanUrl = hashIdx !== -1 ? url.slice(0, hashIdx) : url;
+    // Mémorise le fragment pour défiler vers lui après chargement
+    _pendingAnchor = hashIdx !== -1 ? url.slice(hashIdx) : null;
     loader.style.display = 'flex';
     frame.src = `/api/ebdz-proxy?url=${encodeURIComponent(cleanUrl)}`;
     urlBar.value = url;
@@ -553,6 +565,13 @@
 
   function onFrameLoad() {
     loader.style.display = 'none';
+    if (_pendingAnchor) {
+      const anchor = _pendingAnchor;
+      _pendingAnchor = null;
+      setTimeout(() => {
+        try { frame.contentWindow.postMessage({ type: 'scrollTo', anchor }, '*'); } catch (_) {}
+      }, 200);
+    }
   }
 
   // ── postMessage from iframe ──
@@ -646,25 +665,46 @@
   }
 
   // ── Tab Collection ──
-  let _allSeries = [];
   async function loadCollectionList() {
     try {
       const r = await fetch('/api/queue/series-on-disk').then(r => r.json());
       _allSeries = [];
+      _allSeriesByLib = {};
+      const sel = document.getElementById('sb-library-sel');
+      if (sel) sel.innerHTML = '<option value="">Toutes les librairies</option>';
       if (r.ok && r.libraries) {
         r.libraries.forEach(lib => {
+          _allSeriesByLib[lib.id] = lib.series || [];
           (lib.series || []).forEach(s => _allSeries.push(s));
+          if (sel) {
+            const opt = document.createElement('option');
+            opt.value = lib.id;
+            opt.textContent = lib.name;
+            sel.appendChild(opt);
+          }
         });
       }
       renderCollectionResults(_allSeries.slice(0, 40));
     } catch(e) {}
   }
 
+  function _getActiveLibSeries() {
+    const sel = document.getElementById('sb-library-sel');
+    const libId = sel ? sel.value : '';
+    return (libId && _allSeriesByLib[libId]) ? _allSeriesByLib[libId] : _allSeries;
+  }
+
+  function filterSidebarByLib() {
+    const list = _getActiveLibSeries();
+    renderCollectionResults(list.slice(0, 40));
+    const q = (document.getElementById('col-search') || {}).value || '';
+    if (q) searchCollection(q);
+  }
+
   function searchCollection(q) {
     const term = q.toLowerCase();
-    const filtered = term
-      ? _allSeries.filter(s => s.toLowerCase().includes(term))
-      : _allSeries;
+    const list = _getActiveLibSeries();
+    const filtered = term ? list.filter(s => s.toLowerCase().includes(term)) : list;
     renderCollectionResults(filtered.slice(0, 40));
   }
 

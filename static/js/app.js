@@ -980,10 +980,14 @@ async function applyQueueFilters() {
 }
 
 async function _loadQueueLibrarySelect() {
-  const sel = document.getElementById('queue-series-select');
-  const lbl = document.getElementById('queue-dest-label');
+  const sel    = document.getElementById('queue-series-select');
+  const libSel = document.getElementById('queue-lib-filter');
+  const lbl    = document.getElementById('queue-dest-label');
 
   const d = await api('/queue/series-on-disk');
+
+  _queueLibraryData = [];
+  _librariesForUI   = [];
 
   if (!d.ok || !d.libraries?.length) {
     if (lbl) {
@@ -996,12 +1000,29 @@ async function _loadQueueLibrarySelect() {
 
   if (lbl) { lbl.textContent = ''; }
 
+  // Construit le cache librairie pour le filtre
+  _queueLibraryData = d.libraries.map(lib => ({
+    id:     lib.id,
+    name:   lib.name,
+    series: new Set(lib.series || []),
+  }));
+  _librariesForUI = d.libraries.map(lib => ({ id: lib.id, name: lib.name }));
+
+  // Sélecteur de filtre par librairie (queue display)
+  if (libSel) {
+    let libHtml = '<option value="">Toutes les librairies</option>';
+    d.libraries.forEach(lib => {
+      libHtml += `<option value="${esc(lib.id)}">${esc(lib.name)}</option>`;
+    });
+    libSel.innerHTML = libHtml;
+    libSel.value = _queueLibFilter; // restaure la sélection précédente si applicable
+  }
+
   if (!sel) return;
 
-  // Groupe par librairie : "Toutes" + optgroup par librairie
+  // Groupe par librairie pour le sélecteur "Détecter manquants"
   let html = '<option value="|">Toutes les librairies</option>';
   for (const lib of d.libraries) {
-    // Option pour toute la librairie
     html += `<optgroup label="📚 ${esc(lib.name)}">`;
     html += `<option value="${esc(lib.id)}|">— Toute la librairie —</option>`;
     for (const serie of lib.series) {
@@ -1012,10 +1033,66 @@ async function _loadQueueLibrarySelect() {
   sel.innerHTML = html;
 }
 
+function onQueueLibFilterChange() {
+  const sel = document.getElementById('queue-lib-filter');
+  _queueLibFilter   = sel ? sel.value : '';
+  _queuePage        = 1;
+  _upgradeQueuePage = 1;
+  _torrentQueuePage = 1;
+  _telegramQueuePage = 1;
+  filterQueueTable();
+  filterTorrentQueueTable();
+  filterTelegramQueueTable();
+}
+
+function _itemMatchesLibFilter(item) {
+  if (!_queueLibFilter) return true;
+  const lib = _queueLibraryData.find(l => l.id === _queueLibFilter);
+  return lib ? lib.series.has(item.series_name || '') : true;
+}
+
+function _sortQueueItems(items, col, dir) {
+  return [...items].sort((a, b) => {
+    if (col === 'added_at') {
+      const va = a.added_at || '', vb = b.added_at || '';
+      return dir === 'asc' ? va.localeCompare(vb) : vb.localeCompare(va);
+    } else if (col === 'status') {
+      const ord = { pending: 0, downloading: 1, done: 2 };
+      const va = ord[a.status || 'pending'] ?? 0;
+      const vb = ord[b.status || 'pending'] ?? 0;
+      return dir === 'asc' ? va - vb : vb - va;
+    } else {
+      const na = (a.series_name || '').toLowerCase();
+      const nb = (b.series_name || '').toLowerCase();
+      return dir === 'asc' ? na.localeCompare(nb) : nb.localeCompare(na);
+    }
+  });
+}
+
+function _updateSortIcons(tab, col, dir) {
+  const maps = {
+    emule:    { series: 'queue-sort-icon',   added_at: 'queue-added-icon',   status: 'queue-status-icon'   },
+    upgrade:  { series: 'upgrade-sort-icon', added_at: 'upgrade-added-icon', status: 'upgrade-status-icon' },
+    torrent:  { series: 'torrent-sort-icon', added_at: 'torrent-added-icon', status: 'torrent-status-icon' },
+    telegram: { series: 'telegram-sort-icon',added_at: 'telegram-added-icon',status: 'telegram-status-icon'},
+  };
+  const m = maps[tab];
+  if (!m) return;
+  Object.entries(m).forEach(([c, iconId]) => {
+    const el = document.getElementById(iconId);
+    if (el) el.textContent = c === col ? (dir === 'asc' ? '↑' : '↓') : '↕';
+  });
+}
+
 let _allQueueItems    = [];     // Cache complet pour filtre/tri/pagination locale
-let _queueSortDir     = 'asc'; // 'asc' | 'desc'
+let _queueSortCol     = 'series'; // colonne de tri active : 'series' | 'added_at' | 'status'
+let _queueSortDir     = 'asc';
+let _upgradeSortCol   = 'series';
 let _upgradeSortDir   = 'asc'; // tri indépendant pour la section Upgrades
 let _upgradeQueuePage = 1;
+let _queueLibraryData = []; // [{id, name, series: Set}] pour le filtre par librairie
+let _queueLibFilter   = ''; // '' = toutes, sinon lib_id sélectionné
+let _librariesForUI   = []; // [{id, name}] pour l'interface canaux Telegram
 
 async function refreshQueue(page = 1) {
   _queuePage = page;
@@ -1030,57 +1107,54 @@ function filterQueueTable() {
   const q  = ((document.getElementById('queue-search') || {}).value || '').toLowerCase().trim();
   let items = [..._allQueueItems];
 
-  // Filtre textuel sur la série ou le fichier
+  // Filtre textuel
   if (q) {
     items = items.filter(i =>
       (i.series_name || '').toLowerCase().includes(q) ||
       (i.filename    || '').toLowerCase().includes(q)
     );
   }
+  // Filtre librairie
+  if (_queueLibFilter) items = items.filter(i => _itemMatchesLibFilter(i));
 
-  // Sépare les ajouts et les upgrades avec tri indépendant
-  const missingItems = items.filter(i => i.action !== 'upgrade').sort((a, b) => {
-    const na = (a.series_name || '').toLowerCase();
-    const nb = (b.series_name || '').toLowerCase();
-    return _queueSortDir === 'asc' ? na.localeCompare(nb) : nb.localeCompare(na);
-  });
-  const upgradeItems = items.filter(i => i.action === 'upgrade').sort((a, b) => {
-    const na = (a.series_name || '').toLowerCase();
-    const nb = (b.series_name || '').toLowerCase();
-    return _upgradeSortDir === 'asc' ? na.localeCompare(nb) : nb.localeCompare(na);
-  });
+  // Sépare ajouts et upgrades, tri indépendant
+  const missingItems = _sortQueueItems(items.filter(i => i.action !== 'upgrade'), _queueSortCol,  _queueSortDir);
+  const upgradeItems = _sortQueueItems(items.filter(i => i.action === 'upgrade'), _upgradeSortCol, _upgradeSortDir);
 
-  // Pagination ajouts
   const totalMissing = missingItems.length;
   const startMissing = (_queuePage - 1) * QUEUE_PAGE_SIZE;
   renderQueueTable(missingItems.slice(startMissing, startMissing + QUEUE_PAGE_SIZE), upgradeItems);
   renderQueuePagination(totalMissing);
 
-  // Pagination upgrades
   const totalUpgrade = upgradeItems.length;
   const startUpgrade = (_upgradeQueuePage - 1) * QUEUE_PAGE_SIZE;
   renderUpgradeTable(upgradeItems.slice(startUpgrade, startUpgrade + QUEUE_PAGE_SIZE));
   renderUpgradePagination(totalUpgrade);
 
-  // Affiche/masque les sections vides
   const emptyGlobal = document.getElementById('queue-empty');
   if (emptyGlobal) emptyGlobal.style.display = (!missingItems.length && !upgradeItems.length) ? '' : 'none';
 }
 
 function sortQueueBy(col) {
-  if (col !== 'series') return;
-  _queueSortDir = _queueSortDir === 'asc' ? 'desc' : 'asc';
-  const icon = document.getElementById('queue-sort-icon');
-  if (icon) icon.textContent = _queueSortDir === 'asc' ? '↑' : '↓';
+  if (_queueSortCol === col) {
+    _queueSortDir = _queueSortDir === 'asc' ? 'desc' : 'asc';
+  } else {
+    _queueSortCol = col;
+    _queueSortDir = 'asc';
+  }
+  _updateSortIcons('emule', _queueSortCol, _queueSortDir);
   _queuePage = 1;
   filterQueueTable();
 }
 
 function sortUpgradeBy(col) {
-  if (col !== 'series') return;
-  _upgradeSortDir = _upgradeSortDir === 'asc' ? 'desc' : 'asc';
-  const icon = document.getElementById('upgrade-sort-icon');
-  if (icon) icon.textContent = _upgradeSortDir === 'asc' ? '↑' : '↓';
+  if (_upgradeSortCol === col) {
+    _upgradeSortDir = _upgradeSortDir === 'asc' ? 'desc' : 'asc';
+  } else {
+    _upgradeSortCol = col;
+    _upgradeSortDir = 'asc';
+  }
+  _updateSortIcons('upgrade', _upgradeSortCol, _upgradeSortDir);
   _upgradeQueuePage = 1;
   filterQueueTable();
 }
@@ -2380,6 +2454,7 @@ function switchQueueTab(tab) {
 // ── Queue Torrent ──
 let _torrentQueueItems = [];
 let _torrentQueuePage  = 1;
+let _torrentSortCol    = 'series';
 let _torrentSortDir    = 'asc';
 const TORRENT_PAGE_SIZE = 20;
 
@@ -2410,10 +2485,13 @@ function renderTorrentQueueStats() {
 }
 
 function sortTorrentQueueBy(col) {
-  if (col !== 'series') return;
-  _torrentSortDir = _torrentSortDir === 'asc' ? 'desc' : 'asc';
-  const icon = document.getElementById('torrent-sort-icon');
-  if (icon) icon.textContent = _torrentSortDir === 'asc' ? '↑' : '↓';
+  if (_torrentSortCol === col) {
+    _torrentSortDir = _torrentSortDir === 'asc' ? 'desc' : 'asc';
+  } else {
+    _torrentSortCol = col;
+    _torrentSortDir = 'asc';
+  }
+  _updateSortIcons('torrent', _torrentSortCol, _torrentSortDir);
   _torrentQueuePage = 1;
   filterTorrentQueueTable();
 }
@@ -2424,11 +2502,8 @@ function filterTorrentQueueTable() {
   if (q) items = items.filter(i =>
     (i.series_name || '').toLowerCase().includes(q) ||
     (i.filename    || '').toLowerCase().includes(q));
-  items.sort((a, b) => {
-    const na = (a.series_name || '').toLowerCase();
-    const nb = (b.series_name || '').toLowerCase();
-    return _torrentSortDir === 'asc' ? na.localeCompare(nb) : nb.localeCompare(na);
-  });
+  if (_queueLibFilter) items = items.filter(i => _itemMatchesLibFilter(i));
+  items = _sortQueueItems(items, _torrentSortCol, _torrentSortDir);
   const total = items.length;
   const start = (_torrentQueuePage - 1) * TORRENT_PAGE_SIZE;
   renderTorrentQueueTable(items.slice(start, start + TORRENT_PAGE_SIZE));
@@ -3187,11 +3262,14 @@ async function openTelegramChannels(id, doRefresh = true) {
   else _loadSavedChannels(id);
 }
 
-async function _loadSavedChannels(id) {
-  const d = await api('/indexers/telegram');
-  const idx = (d.indexers || []).find(i => i.id === id);
-  if (!idx) return;
-  _renderTelegramChannels(idx.channels || [], idx.channels || []);
+async function _ensureLibraries() {
+  if (_librariesForUI.length > 0) return;
+  try {
+    const d = await api('/queue/series-on-disk');
+    if (d.ok && d.libraries) {
+      _librariesForUI = d.libraries.map(l => ({ id: l.id, name: l.name }));
+    }
+  } catch (_) {}
 }
 
 async function refreshTelegramChannels() {
@@ -3201,7 +3279,8 @@ async function refreshTelegramChannels() {
   if (status) { status.textContent = 'Chargement…'; status.style.color = 'var(--text-dim)'; }
   if (list)   list.innerHTML = '<p style="color:var(--text-dim);font-size:12px">Récupération des canaux…</p>';
 
-  // Canaux déjà sélectionnés
+  await _ensureLibraries();
+
   const saved = await api('/indexers/telegram');
   const idx   = (saved.indexers || []).find(i => i.id === _telegramCurrentIdx);
   const savedChannels = idx ? (idx.channels || []) : [];
@@ -3216,30 +3295,65 @@ async function refreshTelegramChannels() {
   _renderTelegramChannels(d.channels, savedChannels);
 }
 
+async function _loadSavedChannels(id) {
+  await _ensureLibraries();
+  const d = await api('/indexers/telegram');
+  const idx = (d.indexers || []).find(i => i.id === id);
+  if (!idx) return;
+  _renderTelegramChannels(idx.channels || [], idx.channels || []);
+}
+
 function _renderTelegramChannels(channels, savedChannels) {
-  const list   = document.getElementById('tg-channels-list');
+  const list = document.getElementById('tg-channels-list');
   if (!list) return;
-  const savedIds = new Set(savedChannels.filter(c => c.enabled).map(c => String(c.id)));
+
+  // Construit un map id → {enabled, library_ids} depuis les canaux sauvegardés
+  const savedMap = {};
+  savedChannels.forEach(c => {
+    savedMap[String(c.id)] = { enabled: c.enabled, library_ids: c.library_ids || [] };
+  });
+
   if (!channels.length) {
     list.innerHTML = '<p style="color:var(--text-dim);font-size:12px">Aucun canal trouvé.</p>';
     return;
   }
-  list.innerHTML = channels.map(ch => `
-    <div style="display:flex;align-items:center;gap:10px;padding:6px 0;border-bottom:1px solid var(--border)">
-      <input type="checkbox" id="ch-${esc(ch.id)}" value="${esc(ch.id)}" ${savedIds.has(String(ch.id)) ? 'checked' : ''}>
-      <label for="ch-${esc(ch.id)}" style="flex:1;cursor:pointer;font-size:13px">${esc(ch.name)}</label>
-      <span style="color:var(--text-dim);font-size:11px">${ch.type}</span>
-    </div>`).join('');
+
+  list.innerHTML = channels.map(ch => {
+    const saved     = savedMap[String(ch.id)] || {};
+    const checked   = saved.enabled ? 'checked' : '';
+    const libIds    = saved.library_ids || [];
+    const libChecks = _librariesForUI.map(lib => `
+      <label style="display:flex;align-items:center;gap:4px;font-size:11px;cursor:pointer;white-space:nowrap">
+        <input type="checkbox" class="ch-lib-chk" data-ch-id="${esc(String(ch.id))}" data-lib-id="${esc(lib.id)}"
+               ${libIds.includes(lib.id) ? 'checked' : ''}>
+        ${esc(lib.name)}
+      </label>`).join('');
+
+    return `<div style="padding:6px 0;border-bottom:1px solid var(--border)">
+      <div style="display:flex;align-items:center;gap:10px">
+        <input type="checkbox" id="ch-${esc(String(ch.id))}" value="${esc(String(ch.id))}" ${checked}>
+        <label for="ch-${esc(String(ch.id))}" style="flex:1;cursor:pointer;font-size:13px">${esc(ch.name)}</label>
+        <span style="color:var(--text-dim);font-size:11px">${esc(ch.type || '')}</span>
+      </div>
+      ${libChecks ? `<div style="display:flex;flex-wrap:wrap;gap:8px;margin:4px 0 0 22px">${libChecks}</div>` : ''}
+    </div>`;
+  }).join('');
 }
 
 async function saveTelegramChannels() {
-  const status = document.getElementById('tg-channels-status');
-  const checkboxes = document.querySelectorAll('#tg-channels-list input[type=checkbox]');
-  const channels = [...checkboxes].map(cb => ({
-    id:      cb.value,
-    name:    cb.nextElementSibling?.textContent?.trim() || cb.value,
-    enabled: cb.checked,
-  }));
+  const status   = document.getElementById('tg-channels-status');
+  // Itère uniquement sur les checkboxes de canal (id="ch-…"), pas les checkboxes librairie
+  const chanCbs  = document.querySelectorAll('#tg-channels-list input[id^="ch-"]');
+  const channels = [...chanCbs].map(cb => {
+    const chId   = cb.value;
+    const libCbs = document.querySelectorAll(`#tg-channels-list input.ch-lib-chk[data-ch-id="${chId}"]`);
+    return {
+      id:          chId,
+      name:        cb.nextElementSibling?.textContent?.trim() || chId,
+      enabled:     cb.checked,
+      library_ids: [...libCbs].filter(c => c.checked).map(c => c.dataset.libId),
+    };
+  });
   const d = await api(`/indexers/telegram/${_telegramCurrentIdx}/channels`, 'POST', { channels });
   if (status) {
     status.textContent = d.ok ? '✓ Sauvegardé' : (d.message || 'Erreur');
@@ -3272,6 +3386,7 @@ async function refreshTelegramCache() {
 
 let _telegramQueueItems = [];
 let _telegramQueuePage  = 1;
+let _telegramSortCol    = 'series';
 let _telegramSortDir    = 'asc';
 const TELEGRAM_PAGE_SIZE = 20;
 
@@ -3294,13 +3409,14 @@ function renderTelegramQueueStats() {
 }
 
 function sortTelegramQueueBy(col) {
-  _telegramSortDir = _telegramSortDir === 'asc' ? 'desc' : 'asc';
-  const icon = document.getElementById('telegram-sort-icon');
-  if (icon) icon.textContent = _telegramSortDir === 'asc' ? '↑' : '↓';
-  _telegramQueueItems.sort((a, b) => {
-    const va = a.series_name || '', vb = b.series_name || '';
-    return _telegramSortDir === 'asc' ? va.localeCompare(vb) : vb.localeCompare(va);
-  });
+  if (_telegramSortCol === col) {
+    _telegramSortDir = _telegramSortDir === 'asc' ? 'desc' : 'asc';
+  } else {
+    _telegramSortCol = col;
+    _telegramSortDir = 'asc';
+  }
+  _updateSortIcons('telegram', _telegramSortCol, _telegramSortDir);
+  _telegramQueuePage = 1;
   filterTelegramQueueTable();
 }
 
@@ -3308,6 +3424,8 @@ function filterTelegramQueueTable() {
   const q     = (document.getElementById('telegram-queue-search')?.value || '').toLowerCase();
   let items   = [..._telegramQueueItems];
   if (q) items = items.filter(i => (i.series_name || '').toLowerCase().includes(q));
+  if (_queueLibFilter) items = items.filter(i => _itemMatchesLibFilter(i));
+  items = _sortQueueItems(items, _telegramSortCol, _telegramSortDir);
   const pages = Math.ceil(items.length / TELEGRAM_PAGE_SIZE) || 1;
   _telegramQueuePage = Math.max(1, Math.min(_telegramQueuePage, pages));
   const start = (_telegramQueuePage - 1) * TELEGRAM_PAGE_SIZE;
