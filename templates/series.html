@@ -400,21 +400,31 @@ async function searchMangadb() {
     return;
   }
 
-  results.innerHTML = d.results.map(r => `
+  // Stocke les résultats pour les passer au lien sans 2e appel réseau
+  _mangadbResults = d.results || [];
+  results.innerHTML = _mangadbResults.map((r, i) => `
     <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 10px;
                 background:var(--bg-input);border-radius:6px;border:1px solid var(--border)">
       <div>
         <div style="font-size:13px;font-weight:500">${esc(r.titre)}</div>
-        <div style="font-size:11px;color:var(--text-dim)">${esc(r.auteur || '')} ${r.score ? '· Score : ' + Math.round(r.score*100)+'%' : ''}</div>
+        <div style="font-size:11px;color:var(--text-dim)">
+          ${esc(r.auteur || '')}
+          ${r.tomes_vf ? '· ' + r.tomes_vf + ' t.' : ''}
+          ${r.score ? '· ' + Math.round(r.score*100)+'%' : ''}
+        </div>
       </div>
-      <button onclick="linkMangadb('${esc(r.titre)}')"
+      <button onclick="linkMangadb(${i})"
               style="padding:5px 12px;background:var(--accent);border:none;border-radius:5px;color:#000;font-size:12px;font-weight:600;cursor:pointer;flex-shrink:0">
         Associer
       </button>
     </div>`).join('');
 }
 
-async function linkMangadb(titre) {
+let _mangadbResults = [];
+
+async function linkMangadb(idx) {
+  const result = _mangadbResults[idx] || {};
+  const titre  = result.titre || '';
   const status = document.getElementById('mangadb-modal-status');
   status.textContent = 'Association en cours…';
   status.style.color = 'var(--text-dim)';
@@ -422,7 +432,7 @@ async function linkMangadb(titre) {
   const d = await fetch(`/api/collection/series/${_seriesSlugGlobal}/mangadb-link`, {
     method: 'POST',
     headers: {'Content-Type':'application/json'},
-    body: JSON.stringify({mangadb_titre: titre})
+    body: JSON.stringify({ mangadb_titre: titre, result })
   }).then(r => r.json()).catch(() => ({ok: false, message: 'Erreur réseau'}));
 
   if (d.ok) {

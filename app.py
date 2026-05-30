@@ -2065,14 +2065,30 @@ def api_series_detail(series_slug):
 
 @app.route("/api/collection/series/<path:series_slug>/mangadb-search")
 def api_mangadb_search_for_series(series_slug):
-    """Recherche des candidats MangaDB pour une série (association manuelle)."""
+    """Recherche des candidats dans la source metadata liée à la librairie de la série."""
     q = request.args.get("q", "").strip()
     if not q:
         return jsonify({"ok": False, "message": "Paramètre q requis", "results": []})
     try:
-        raw = mangadb_client.search_series(q)
-        results = [{"titre": r.get("titre",""), "score": r.get("score",0),
-                    "auteur": r.get("auteur",""), "statut": r.get("statut","")} for r in raw]
+        # Filtre la recherche sur la source liée à la librairie de la série
+        series_info = lib_mgr.resolve_slug(series_slug)
+        library_id  = series_info.get("lib_id") if series_info else None
+        sources     = config.get("metadata_sources", [])
+        linked      = [s for s in sources if library_id in s.get("library_ids", [])] if library_id else []
+        src_id      = linked[0].get("id") if linked else None  # None = toutes les sources
+
+        raw = mangadb_client.search_series(q, source_id=src_id)
+        # Retourne le résultat complet pour éviter un 2e appel au moment du lien
+        results = [{
+            "titre":     r.get("titre", ""),
+            "score":     r.get("score", 0),
+            "auteur":    r.get("auteur", ""),
+            "editeur":   r.get("editeur", ""),
+            "statut":    r.get("statut_vf", r.get("statut", "")),
+            "tomes_vf":  r.get("tomes_vf", 0),
+            "genres":    r.get("genres", []),
+            "url":       r.get("manga_news_url", r.get("url", "")),
+        } for r in raw]
         return jsonify({"ok": True, "results": results[:10]})
     except Exception as e:
         return jsonify({"ok": False, "message": str(e), "results": []})
@@ -2080,9 +2096,9 @@ def api_mangadb_search_for_series(series_slug):
 
 @app.route("/api/collection/series/<path:series_slug>/mangadb-link", methods=["POST"])
 def api_mangadb_link(series_slug):
-    """Associe manuellement une série Komga à une entrée MangaDB."""
+    """Associe manuellement une série à une entrée de la source metadata liée à la librairie."""
     d          = request.json or {}
-    mangadb_id = d.get("mangadb_titre", "").strip()  # titre exact MangaDB
+    mangadb_id = d.get("mangadb_titre", "").strip()
     if not mangadb_id:
         return jsonify({"ok": False, "message": "mangadb_titre requis"})
 
@@ -2092,31 +2108,46 @@ def api_mangadb_link(series_slug):
     series_id  = series_info["id"]
     library_id = series_info["lib_id"]
 
-    # Récupère les méta MangaDB depuis le titre exact
-    # Privilégie la source liée à la librairie de la série
     sources = config.get("metadata_sources", [])
     linked  = [s for s in sources if library_id in s.get("library_ids", [])]
     src_id  = linked[0].get("id") if linked else (sources[0].get("id") if sources else None)
+
     try:
+        # Le frontend peut passer directement les données du résultat de recherche
+        # pour éviter un 2e appel réseau (utile si /api/series/<titre> n'existe pas)
+        search_result = d.get("result") or {}
+
+        # Tente l'endpoint détail (optionnel — enrichit avec resume_t01)
         meta = mangadb_client.get_series_detail(mangadb_id, src_id)
-        if not meta:
-            return jsonify({"ok": False, "message": f"Titre '{mangadb_id}' introuvable dans MangaDB"})
-        # Construit le cache comme find_best_match
-        built = cache_mod.find_in_csv_by_titre(mangadb_id) or {}
-        if not built:
-            # Fallback : on stocke les données directement depuis l'API detail
+
+        if meta:
             built = {
                 "titre":          mangadb_id,
-                "auteur":         meta.get("auteur", ""),
-                "editeur":        meta.get("editeur", ""),
-                "tomes_vf":       meta.get("tomes_total", 0),
-                "statut_vf":      meta.get("statut", ""),
-                "genres":         meta.get("genres", []),
-                "manga_news_url": meta.get("url", ""),
+                "auteur":         meta.get("auteur", "") or search_result.get("auteur", ""),
+                "editeur":        meta.get("editeur", "") or search_result.get("editeur", ""),
+                "tomes_vf":       meta.get("tomes_total", 0) or search_result.get("tomes_vf", 0),
+                "statut_vf":      meta.get("statut", "") or search_result.get("statut", ""),
+                "genres":         meta.get("genres", []) or search_result.get("genres", []),
+                "manga_news_url": meta.get("url", "") or search_result.get("url", ""),
                 "resume_t01":     (meta.get("tomes") or [{}])[0].get("resume", "") if meta.get("tomes") else "",
                 "_manual":        True,
             }
-        built["_manual"] = True
+        elif search_result.get("titre"):
+            # Fallback : construit depuis les données de recherche passées par le frontend
+            built = {
+                "titre":          mangadb_id,
+                "auteur":         search_result.get("auteur", ""),
+                "editeur":        search_result.get("editeur", ""),
+                "tomes_vf":       search_result.get("tomes_vf", 0),
+                "statut_vf":      search_result.get("statut", ""),
+                "genres":         search_result.get("genres", []),
+                "manga_news_url": search_result.get("url", ""),
+                "resume_t01":     "",
+                "_manual":        True,
+            }
+        else:
+            return jsonify({"ok": False, "message": f"Titre '{mangadb_id}' introuvable dans la source metadata"})
+
         cache_mod.set_series_meta(library_id, series_id, built)
         return jsonify({"ok": True, "message": f"Associé à '{mangadb_id}' ✓", "meta": built})
     except Exception as e:
