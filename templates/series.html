@@ -1042,30 +1042,52 @@ async function searchTelegram() {
   const warns = (d.warnings || []).filter(Boolean);
   if (status) status.textContent = `${_telegramFiles.length} fichier(s) trouvé(s)` + (warns.length ? ` — ⚠ ${warns.join(' | ')}` : '');
 
-  const ownedSet = new Set(d.owned_tomes || []);
-  res.innerHTML = _telegramFiles.map((f, idx) => {
-    const owned   = f.owned;
-    const inQueue = f.in_queue;
-    const tome    = f.tome_number ? `T${String(f.tome_number).padStart(2,'0')}` : '?';
-    const sizeMb  = f.size ? (f.size / 1024 / 1024).toFixed(1) + ' Mo' : '';
+  // Groupe les fichiers par canal, triés par numéro de tome dans chaque canal
+  const byChannel = {};
+  _telegramFiles.forEach((f, idx) => {
+    const key  = f.channel_id  || '__no_channel__';
+    const name = f.channel_name || 'Canal inconnu';
+    if (!byChannel[key]) byChannel[key] = { name, files: [] };
+    byChannel[key].files.push({ ...f, _idx: idx });
+  });
+  Object.values(byChannel).forEach(ch => {
+    ch.files.sort((a, b) => {
+      const ta = a.tome_number ?? Infinity;
+      const tb = b.tome_number ?? Infinity;
+      return ta - tb;
+    });
+  });
+
+  function _renderTgFile(f) {
+    const idx      = f._idx;
+    const owned    = f.owned;
+    const inQueue  = f.in_queue;
+    const tome     = f.tome_number != null ? `T${String(f.tome_number).padStart(2,'0')}` : '?';
+    const sizeMb   = f.size ? (f.size / 1024 / 1024).toFixed(1) + ' Mo' : '';
     const tagBadge = f.tag && f.tag !== 'Notag'
       ? `<span style="background:var(--accent-dim,#1a3a3a);color:var(--accent);border-radius:4px;padding:1px 6px;font-size:10px">${esc(f.tag)}</span>` : '';
-    const ownedBadge = owned
-      ? `<span style="color:var(--success);font-size:10px" title="Possédé">✓ Possédé</span>` : '';
-    const queueBadge = inQueue
-      ? `<span style="color:var(--text-dim);font-size:10px">⌛ En queue</span>` : '';
-    const ch = f.channel_name ? `<span style="color:var(--text-dim);font-size:10px">${esc(f.channel_name)}</span>` : '';
-
-    return `<div style="display:flex;align-items:center;gap:10px;padding:7px 0;border-bottom:1px solid var(--border)">
+    const ownedBadge = owned ? `<span style="color:var(--success);font-size:10px">✓ Possédé</span>` : '';
+    const queueBadge = inQueue ? `<span style="color:var(--text-dim);font-size:10px">⌛ En queue</span>` : '';
+    return `<div style="display:flex;align-items:center;gap:10px;padding:6px 0;border-bottom:1px solid var(--border)">
       <input type="checkbox" value="${idx}" ${inQueue ? 'disabled' : ''}
-             onchange="_tgToggle(${idx},this.checked)"
-             style="flex-shrink:0;cursor:pointer">
+             onchange="_tgToggle(${idx},this.checked)" style="flex-shrink:0;cursor:pointer">
       <span style="width:40px;text-align:center;font-weight:600;color:var(--accent);font-size:13px;flex-shrink:0">${tome}</span>
       <span style="flex:1;font-size:12px;word-break:break-all">${esc(f.filename)}</span>
-      <span style="display:flex;gap:5px;flex-shrink:0;align-items:center">${tagBadge}${ownedBadge}${queueBadge}${ch}</span>
+      <span style="display:flex;gap:5px;flex-shrink:0;align-items:center">${tagBadge}${ownedBadge}${queueBadge}</span>
       <span style="color:var(--text-dim);font-size:11px;flex-shrink:0">${sizeMb}</span>
     </div>`;
-  }).join('');
+  }
+
+  res.innerHTML = Object.values(byChannel).map(ch => `
+    <div style="margin-bottom:12px">
+      <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;
+                  color:var(--text-dim);padding:6px 0 4px;border-bottom:2px solid var(--border);
+                  margin-bottom:2px;display:flex;align-items:center;gap:6px">
+        <svg viewBox="0 0 24 24" fill="currentColor" style="width:12px;height:12px"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm4.64 6.8c-.15 1.58-.8 5.42-1.13 7.19-.14.75-.42 1-.68 1.03-.58.05-1.02-.38-1.58-.75-.88-.58-1.38-.94-2.23-1.5-.99-.65-.35-1.01.22-1.59.15-.15 2.71-2.48 2.76-2.69a.2.2 0 0 0-.05-.18c-.06-.05-.14-.03-.21-.02-.09.02-1.49.95-4.22 2.79-.4.27-.76.41-1.08.4-.36-.01-1.04-.2-1.55-.37-.63-.2-1.12-.31-1.08-.66.02-.18.27-.36.74-.55 2.92-1.27 4.86-2.11 5.83-2.51 2.78-1.16 3.35-1.36 3.73-1.36.08 0 .27.02.39.12.1.08.13.19.14.27-.01.06.01.24-.01.38z"/></svg>
+        ${esc(ch.name)} <span style="font-weight:400;color:var(--text-dim)">(${ch.files.length})</span>
+      </div>
+      ${ch.files.map(f => _renderTgFile(f)).join('')}
+    </div>`).join('');
 }
 
 function _tgToggle(idx, checked) {

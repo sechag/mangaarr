@@ -325,8 +325,8 @@ def is_enriching(library_id):
 
 def find_in_csv_by_titre(titre: str) -> dict | None:
     """Cherche un titre exact dans le cache CSV (pour association manuelle)."""
-    c = load()
-    df_data = c.get("_csv_df")
+    with _mem_lock:
+        df_data = _mem_cache.get("_csv_df")
     if df_data:
         try:
             import pandas as _pd

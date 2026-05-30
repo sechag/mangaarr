@@ -2093,8 +2093,10 @@ def api_mangadb_link(series_slug):
     library_id = series_info["lib_id"]
 
     # Récupère les méta MangaDB depuis le titre exact
+    # Privilégie la source liée à la librairie de la série
     sources = config.get("metadata_sources", [])
-    src_id  = sources[0].get("id") if sources else None
+    linked  = [s for s in sources if library_id in s.get("library_ids", [])]
+    src_id  = linked[0].get("id") if linked else (sources[0].get("id") if sources else None)
     try:
         meta = mangadb_client.get_series_detail(mangadb_id, src_id)
         if not meta:
