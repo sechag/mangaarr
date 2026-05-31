@@ -69,21 +69,35 @@ def series_page(series_slug):
 def api_local_series_thumb(series_id):
     """Cover série en WebP (cache disque, 50% résolution)."""
     import image_cache as _ic
+    etag = _ic.get_series_cover_etag(series_id)
+    if etag and request.headers.get("If-None-Match") == etag:
+        return Response(status=304)
     data = _ic.get_series_cover(series_id)
-    if data:
-        mime = "image/webp" if data[:4] == b"RIFF" or data[:4] == b"WEBP" else "image/jpeg"
-        return Response(data, mimetype=mime)
-    return Response(b"", mimetype="image/webp", status=204)
+    if not data:
+        return Response(b"", mimetype="image/webp", status=204)
+    etag = _ic.get_series_cover_etag(series_id) or '"unknown"'
+    mime = "image/webp" if data[:4] in (b"RIFF", b"WEBP") else "image/jpeg"
+    resp = Response(data, mimetype=mime)
+    resp.headers["Cache-Control"] = "public, max-age=86400"
+    resp.headers["ETag"] = etag
+    return resp
 
 @app.route("/api/local/books/<series_id>/<path:filename>/thumbnail")
 def api_local_book_thumb(series_id, filename):
     """Cover tome en WebP (cache disque, 50% résolution)."""
     import image_cache as _ic
+    etag = _ic.get_book_cover_etag(series_id, filename)
+    if etag and request.headers.get("If-None-Match") == etag:
+        return Response(status=304)
     data = _ic.get_book_cover(series_id, filename)
-    if data:
-        mime = "image/webp" if data[:4] in (b"RIFF", b"WEBP") else "image/jpeg"
-        return Response(data, mimetype=mime)
-    return Response(b"", mimetype="image/webp", status=204)
+    if not data:
+        return Response(b"", mimetype="image/webp", status=204)
+    etag = _ic.get_book_cover_etag(series_id, filename) or '"unknown"'
+    mime = "image/webp" if data[:4] in (b"RIFF", b"WEBP") else "image/jpeg"
+    resp = Response(data, mimetype=mime)
+    resp.headers["Cache-Control"] = "public, max-age=86400"
+    resp.headers["ETag"] = etag
+    return resp
 
 
 # ════════════════════════════════════════════════════════
@@ -3608,6 +3622,20 @@ if __name__ == "__main__":
 
     ebdz_scraper.start_scheduler()
     start_meta_sync_scheduler()
+
+    def _prewarm_covers():
+        import time as _t
+        _t.sleep(10)
+        try:
+            import image_cache as _ic
+            import library_manager as _lm
+            for lib in _lm.get_libraries():
+                for s in _lm.scan_library(lib["id"]):
+                    if not _ic.get_series_cover_etag(s["id"]):
+                        _ic.get_series_cover(s["id"], s.get("first_file"))
+        except Exception:
+            pass
+    threading.Thread(target=_prewarm_covers, daemon=True).start()
 
     # Watcher librairies (détection nouveaux fichiers)
     watcher_interval = config.get("watcher_interval", 0)

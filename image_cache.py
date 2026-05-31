@@ -172,6 +172,26 @@ def _to_webp(img_bytes: bytes, quality: int = 75, scale: float = 0.5) -> bytes |
 # API PUBLIQUE
 # ════════════════════════════════════════════════════════
 
+def get_series_cover_etag(series_id: str) -> str | None:
+    """Retourne un ETag basé sur le mtime+taille du fichier cache (O(1), sans lire l'image)."""
+    cache_file = _cover_path(f"series_{series_id}")
+    try:
+        st = os.stat(cache_file)
+        return f'"{int(st.st_mtime)}-{st.st_size}"'
+    except OSError:
+        return None
+
+
+def get_book_cover_etag(series_id: str, filename: str) -> str | None:
+    """Retourne un ETag basé sur le mtime+taille du fichier cache (O(1), sans lire l'image)."""
+    cache_file = _cover_path(f"book_{series_id}_{filename}")
+    try:
+        st = os.stat(cache_file)
+        return f'"{int(st.st_mtime)}-{st.st_size}"'
+    except OSError:
+        return None
+
+
 def get_series_cover(series_id: str, first_file: str | None = None) -> bytes | None:
     """
     Retourne les bytes WebP de la cover série.

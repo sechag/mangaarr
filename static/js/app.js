@@ -162,6 +162,7 @@ function renderSeries(series) {
       <div class="series-cover-wrap">
         <img class="series-cover" src="${esc(s.thumbnail)}"
              alt="${esc(s.name)}"
+             loading="lazy" decoding="async"
              onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
         <div class="series-cover-placeholder" style="display:none">${esc(initial)}</div>
         <button class="series-info-btn" title="${esc(metaLines.join('\n'))}"
