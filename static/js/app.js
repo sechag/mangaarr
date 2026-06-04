@@ -135,17 +135,24 @@ async function loadSeries(libraryId) {
 }
 
 function renderPage() {
-  const start = (_curPage - 1) * _perPage;
-  const slice = _filteredSeries.slice(start, start + _perPage);
-  renderSeries(slice);
+  _applyPageVisibility();
   renderPagination(_filteredSeries.length);
+}
+
+function _applyPageVisibility() {
+  const start = (_curPage - 1) * _perPage;
+  const end   = start + _perPage;
+  document.querySelectorAll('#series-grid .series-card[data-series-idx]').forEach(card => {
+    const idx = parseInt(card.dataset.seriesIdx, 10);
+    card.style.display = (idx >= start && idx < end) ? '' : 'none';
+  });
 }
 
 function renderSeries(series) {
   const grid = document.getElementById('series-grid');
   if (!series.length) { grid.innerHTML = emptyState('Aucune série'); return; }
 
-  grid.innerHTML = series.map(s => {
+  grid.innerHTML = series.map((s, idx) => {
     const hasProgress = s.totalVF && s.totalVF > 0;
     const pct = hasProgress ? Math.min(100, Math.round((s.booksCount / s.totalVF) * 100)) : 0;
     const initial = (s.name || '?')[0].toUpperCase();
@@ -158,7 +165,7 @@ function renderSeries(series) {
       s.diskPath   ? `Dossier : ${s.diskPath}`                   : '',
     ].filter(Boolean);
 
-    return `<a class="series-card" href="/series/${esc(s.slug || s.id)}">
+    return `<a class="series-card" href="/series/${esc(s.slug || s.id)}" data-series-idx="${idx}">
       <div class="series-cover-wrap">
         <img class="series-cover" src="${esc(s.thumbnail)}"
              alt="${esc(s.name)}"
@@ -290,6 +297,7 @@ function filterSeries() {
 
   _filteredSeries = result;
   _curPage = 1;
+  renderSeries(_filteredSeries);
   renderPage();
 }
 

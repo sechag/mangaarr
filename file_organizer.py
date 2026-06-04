@@ -371,6 +371,21 @@ def organize_file(item: dict | None = None, filepath: str | None = None) -> dict
             log(f"Renommage échoué ({e}), nom original conservé")
             dest_path = working_path
 
+    # ── Supprime tout fichier existant pour le même tome (évite les doublons) ──
+    # Couvre le cas où action="missing" mais le tome est déjà présent (ex: re-téléchargement
+    # depuis la navigation ebdz sans que l'item soit marqué "upgrade").
+    if os.path.exists(dest_path) and mm.get("auto_replace", True) and tome_number:
+        try:
+            import renamer as _r_dup
+            _t_raw = str(tome_number).lstrip("Tt").lstrip("0") or "0"
+            _t_str = f"T{int(_t_raw):02d}"
+            dup = _r_dup._find_existing_tome(dest_folder, None, _t_str)
+            if dup and os.path.abspath(dup) != os.path.abspath(dest_path):
+                os.remove(dup)
+                log(f"Doublon supprimé : {os.path.basename(dup)}")
+        except Exception as e:
+            log(f"Vérification doublon échouée ({e})")
+
     # ── Si upgrade : supprime l'ancien fichier APRÈS que le nouveau est bien en place ──
     if action == "upgrade" and owned_file and os.path.exists(dest_path):
         owned_path = os.path.join(dest_folder, owned_file)
