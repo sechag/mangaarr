@@ -59,6 +59,8 @@ def detect_tome(filename: str) -> str | None:
     Retourne "T08", "T108" etc. ou None si non trouvé.
     """
     name = os.path.splitext(filename)[0]
+    if re.search(r'\bone[\s._-]?shot\b', name, re.IGNORECASE):
+        return "OS"
     patterns = [
         # Format MangaArr : .T08. / .T108. (priorité haute)
         r"[.\-_]T(\d{1,3})[.\-_\s]",
@@ -123,6 +125,18 @@ def build_filename(series_clean: str, tome: str, tag: str, format_id: int = None
     if format_id is None:
         format_id = get_rename_format()
 
+    tag_clean = tag.strip()
+
+    if tome == "OS":
+        tag_normalized = tag_clean.replace(" ", ".")
+        if format_id == 2:
+            return f"One Shot ({tag_clean}).cbz"
+        elif format_id == 3:
+            return f"{series_clean}.One.Shot.FRENCH.CBZ.eBook-{tag_normalized}.cbz"
+        else:  # Format 1 (défaut)
+            series_readable = series_clean.replace(".", " ").strip()
+            return f"{series_readable} One Shot ({tag_clean}).cbz"
+
     # Numéro propre depuis "T08" → 8
     try:
         n = int(re.sub(r"[^0-9]", "", tome) or "0")
@@ -130,14 +144,13 @@ def build_filename(series_clean: str, tome: str, tag: str, format_id: int = None
         n = 0
 
     if format_id == 2:
-        return f"Tome {n:02d} ({tag.strip()}).cbz"
+        return f"Tome {n:02d} ({tag_clean}).cbz"
     elif format_id == 3:
-        tag_normalized = tag.replace(" ", ".")
+        tag_normalized = tag_clean.replace(" ", ".")
         return f"{series_clean}.{tome}.FRENCH.CBZ.eBook-{tag_normalized}.cbz"
     else:  # Format 1 (défaut)
-        # Convertit les points en espaces pour le titre lisible
         series_readable = series_clean.replace(".", " ").strip()
-        return f"{series_readable} Tome {n:02d} ({tag.strip()}).cbz"
+        return f"{series_readable} Tome {n:02d} ({tag_clean}).cbz"
 
 
 def parse_existing_filename(filename: str) -> dict | None:
@@ -146,6 +159,25 @@ def parse_existing_filename(filename: str) -> dict | None:
     Retourne {series, tome, tag} ou None.
     series peut être None pour le Format 2.
     """
+    # Format 3 One Shot : Series.One.Shot.FRENCH.CBZ.eBook-TAG.cbz
+    m = re.match(r"^(.+?)\.One\.Shot\.FRENCH\.CBZ\.eBook-(.+)\.cbz$", filename, re.IGNORECASE)
+    if m:
+        tag_raw  = m.group(2).replace(".", " ")
+        detected = profiles.detect_tag(tag_raw)
+        return {"series": m.group(1), "tome": "OS", "tag": detected if detected != "Notag" else tag_raw}
+
+    # Format 1 One Shot : Series One Shot (TAG).cbz
+    m = re.match(r"^(.+?)\s+One\s+Shot\s+\((.+?)\)\.cbz$", filename, re.IGNORECASE)
+    if m:
+        tag = profiles.detect_tag(m.group(2)) or m.group(2)
+        return {"series": m.group(1), "tome": "OS", "tag": tag}
+
+    # Format 2 One Shot : One Shot (TAG).cbz
+    m = re.match(r"^One\s+Shot\s+\((.+?)\)\.cbz$", filename, re.IGNORECASE)
+    if m:
+        tag = profiles.detect_tag(m.group(1)) or m.group(1)
+        return {"series": None, "tome": "OS", "tag": tag}
+
     # Format 3 : One.Piece.T08.FRENCH.CBZ.eBook-Paprika+.cbz
     m = re.match(r"^(.+?)\.(T\d{2,3})\.FRENCH\.CBZ\.eBook-(.+)\.cbz$", filename, re.IGNORECASE)
     if m:
@@ -189,9 +221,7 @@ def rename_file(old_path: str, series_folder_name: str) -> dict:
     series_raw = extract_leading_article(series_folder_name)
     series = clean_title(series_raw)
 
-    tome = detect_tome(filename)
-    if not tome:
-        return {"status": "skipped", "reason": "tome_not_found", "file": filename}
+    tome = detect_tome(filename) or "OS"
 
     tag        = profiles.detect_tag(filename)
     fmt        = get_rename_format()

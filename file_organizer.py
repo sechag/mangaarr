@@ -76,8 +76,20 @@ def detect_series_from_filename(filename: str) -> tuple[str | None, str | None]:
         return series, tome_raw
 
     # Tous les autres formats via detect_tome (exhaustif)
-    tome_tag = _r.detect_tome(filename)  # retourne "T08", "T108" ou None
+    tome_tag = _r.detect_tome(filename)  # retourne "T08", "T108", "OS" ou None
     if tome_tag:
+        if tome_tag == "OS":
+            # One Shot : le titre est tout ce qui précède "one shot"
+            m2 = re.search(r'^(.+?)[.\-_\s]+one[\s._-]?shot', base, re.IGNORECASE)
+            if m2:
+                series = m2.group(1).replace(".", " ").replace("_", " ").strip()
+            else:
+                series = base.replace(".", " ").replace("_", " ").strip()
+            series = re.sub(r"\s+", " ", series).strip()
+            if series:
+                return series, "OS"
+            return None, None
+
         # Extrait le numéro propre
         tome_num = tome_tag.lstrip("T").lstrip("0") or "0"
         tome_int = int(tome_num)
@@ -194,8 +206,13 @@ def organize_file(item: dict | None = None, filepath: str | None = None) -> dict
     if item:
         src_path     = item.get("local_path", "")
         series_name  = item.get("series_name", "")
-        raw_tome     = str(item.get("tome_number", "") or "")
-        tome_number  = raw_tome.lstrip("Tt").lstrip("0") or "0"
+        raw_tome = str(item.get("tome_number", "") or "").strip()
+        if raw_tome.upper() == "OS":
+            tome_number = "OS"
+        elif raw_tome:
+            tome_number = raw_tome.lstrip("Tt").lstrip("0") or "0"
+        else:
+            tome_number = "OS"  # Pas de numéro de tome → One Shot
         action       = item.get("action", "missing")    # "missing" ou "upgrade"
         owned_file   = item.get("owned_file", "")       # fichier à remplacer si upgrade
         series_exact = item.get("series_exact", False)  # nom de série fourni explicitement
@@ -291,9 +308,8 @@ def organize_file(item: dict | None = None, filepath: str | None = None) -> dict
             if tag == "Notag" and src_path.lower().endswith(".cbz"):
                 tag = _p.detect_tag_from_cbz(src_path)
             folder_name  = os.path.basename(dest_folder)
-            fmt          = _r.get_rename_format()
-            _t_clean     = str(tome_number).lstrip("Tt").lstrip("0") or "0"
-            tome_str     = f"T{int(_t_clean):02d}" if _t_clean else "T00"
+            fmt      = _r.get_rename_format()
+            tome_str = "OS" if str(tome_number).upper() == "OS" else f"T{int(str(tome_number).lstrip('Tt').lstrip('0') or '0'):02d}"
             if fmt == 3:
                 series_arg = _r.clean_title(_r.extract_leading_article(folder_name))
             else:
@@ -348,9 +364,8 @@ def organize_file(item: dict | None = None, filepath: str | None = None) -> dict
             tag          = _p.detect_tag(os.path.basename(working_path))
             if tag == "Notag" and working_path.lower().endswith(".cbz"):
                 tag = _p.detect_tag_from_cbz(working_path)
-            fmt          = _r.get_rename_format()
-            _t_clean     = str(tome_number).lstrip("Tt").lstrip("0") or "0"
-            tome_str     = f"T{int(_t_clean):02d}"
+            fmt      = _r.get_rename_format()
+            tome_str = "OS" if str(tome_number).upper() == "OS" else f"T{int(str(tome_number).lstrip('Tt').lstrip('0') or '0'):02d}"
             if fmt == 3:
                 series_arg = _r.clean_title(_r.extract_leading_article(folder_name))
             else:
@@ -377,8 +392,7 @@ def organize_file(item: dict | None = None, filepath: str | None = None) -> dict
     if os.path.exists(dest_path) and mm.get("auto_replace", True) and tome_number:
         try:
             import renamer as _r_dup
-            _t_raw = str(tome_number).lstrip("Tt").lstrip("0") or "0"
-            _t_str = f"T{int(_t_raw):02d}"
+            _t_str = "OS" if str(tome_number).upper() == "OS" else f"T{int(str(tome_number).lstrip('Tt').lstrip('0') or '0'):02d}"
             dup = _r_dup._find_existing_tome(dest_folder, None, _t_str)
             if dup and os.path.abspath(dup) != os.path.abspath(dest_path):
                 os.remove(dup)
