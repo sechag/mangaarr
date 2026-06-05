@@ -123,7 +123,10 @@ def _has_tool(name: str) -> bool:
     return shutil.which(name) is not None
 
 
-def _to_webp(img_bytes: bytes, quality: int = 75, scale: float = 0.5) -> bytes | None:
+_THUMB_MAX_W = 300   # largeur max des thumbnails (px) — les cartes font 200px min
+_THUMB_QUALITY = 55  # qualité WebP : bon rendu à petite taille, fichier ~3× plus léger
+
+def _to_webp(img_bytes: bytes, quality: int = _THUMB_QUALITY, scale: float = 0.5) -> bytes | None:
     """
     Convertit des bytes image (JPEG/PNG) en WebP redimensionné.
     Utilise Pillow si disponible, sinon cwebp en ligne de commande.
@@ -133,13 +136,12 @@ def _to_webp(img_bytes: bytes, quality: int = 75, scale: float = 0.5) -> bytes |
         from PIL import Image
         import io
         img = Image.open(io.BytesIO(img_bytes))
-        # Redimensionne à 50%
-        new_w = max(1, int(img.width  * scale))
-        new_h = max(1, int(img.height * scale))
-        img   = img.resize((new_w, new_h), Image.LANCZOS)
-        # Convertit en WebP
+        # Cap à _THUMB_MAX_W px de large (maintient le ratio, n'agrandit jamais)
+        if img.width > _THUMB_MAX_W:
+            new_h = max(1, int(img.height * _THUMB_MAX_W / img.width))
+            img   = img.resize((_THUMB_MAX_W, new_h), Image.LANCZOS)
         out = io.BytesIO()
-        img.convert("RGB").save(out, format="WEBP", quality=quality, method=4)
+        img.convert("RGB").save(out, format="WEBP", quality=quality, method=6)
         return out.getvalue()
     except ImportError:
         pass
@@ -155,7 +157,7 @@ def _to_webp(img_bytes: bytes, quality: int = 75, scale: float = 0.5) -> bytes |
                 with open(src, "wb") as f:
                     f.write(img_bytes)
                 subprocess.run(
-                    ["cwebp", "-q", str(quality), "-resize", "0", "0", src, "-o", dst],
+                    ["cwebp", "-q", str(quality), "-resize", str(_THUMB_MAX_W), "0", src, "-o", dst],
                     capture_output=True, timeout=30
                 )
                 if os.path.exists(dst):
