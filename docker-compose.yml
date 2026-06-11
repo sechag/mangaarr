@@ -1,62 +1,59 @@
-# ──────────────────────────────────────────────
+# ──────────────────────────────────────────────────────────────
 #  MangaArr — docker-compose.yml
-#  Adapte les chemins hôte selon ton serveur/NAS
-# ──────────────────────────────────────────────
+#
+#  POUR INSTALLER : tu n'as qu'UNE chose à faire →
+#  remplacer les chemins « /chemin/vers/... » à GAUCHE des volumes
+#  par TES dossiers sur le serveur/NAS.
+#
+#  La partie à DROITE des « : » (/media, /incoming, /qbt-category…)
+#  ne se touche PAS : ce sont des chemins internes au conteneur,
+#  déjà configurés dans l'image. Aucune variable d'environnement
+#  n'est obligatoire.
+# ──────────────────────────────────────────────────────────────
 services:
   mangaarr:
-    # Image publiée sur GitHub Container Registry
-    # Pour épingler une version stable : ghcr.io/sechag/mangaarr:v1.0.0
+    # Image publiée sur GitHub Container Registry.
+    # Pour épingler une version stable : ghcr.io/sechag/mangaarr:v1.0.9
     image: ghcr.io/sechag/mangaarr:latest
-    # Pour builder localement depuis les sources, remplace la ligne image par :
-    # build: .
+    # (Pour builder depuis les sources, remplace la ligne ci-dessus par : build: .)
     container_name: mangaarr
     restart: unless-stopped
     ports:
-      - "7474:7474"
+      - "7474:7474"          # http://IP-DU-SERVEUR:7474
+
     volumes:
-      # ── Données persistantes (config, cache, collections)
+      # ── Données persistantes de MangaArr (ne pas modifier) ──────
       - ./data/config:/data/config
       - ./data/cache:/data/cache
       - ./data/emulecollections:/data/emulecollections
 
-      # ── Dossier Incoming eMule/aMule (LECTURE SEULE recommandée)
+      # ── TES dossiers : remplace UNIQUEMENT la partie de gauche ──
+      #
+      # Incoming eMule/aMule (téléchargements finis) — lecture seule
       - /chemin/vers/aMule/Incoming:/incoming:ro
-
-      # ── Dossier de destination des séries (LECTURE/ÉCRITURE)
+      #
+      # Destination des séries (bibliothèque finale)
       - /chemin/vers/Mangas:/media:rw
-
-      # ── Dossier de la catégorie qBittorrent (LECTURE/ÉCRITURE)
-      # Remplace /mnt/user/Download/complete/Mangaarr par le chemin exact
-      # de ta catégorie qBittorrent (save path configuré dans qBittorrent).
-      - /mnt/user/Download/complete/Mangaarr:/qbt-category:rw
-
-      # ── Fichiers .torrent téléchargés par MangaArr avant envoi à qBittorrent
+      #
+      # Dossier où qBittorrent dépose les torrents terminés.
+      # ⚠️ Doit être le MÊME dossier physique que le « save path » de
+      #    ta catégorie qBittorrent, pour que MangaArr voie les fichiers.
+      - /chemin/vers/qbittorrent/Mangaarr:/qbt-category:rw
+      #
+      # Stockage des .torrent récupérés par MangaArr (peut être un dossier vide dédié)
       - /chemin/vers/torrent_files:/torrent_files:rw
-
-      # ── Dossier de téléchargement Telegram (LECTURE/ÉCRITURE)
+      #
+      # Téléchargements Telegram (optionnel — laisse tel quel si tu n'utilises pas Telegram)
       - /chemin/vers/telegram_downloads:/telegram:rw
 
     environment:
-      - MANGAARR_PORT=7474
-      - MANGAARR_CONFIG=/data/config/config.json
-      - MANGAARR_INCOMING=/incoming
-      - MANGAARR_DEST=/media
-      - MANGAARR_CACHE=/data/cache
-      - MANGAARR_EMULE=/data/emulecollections
-      - MANGAARR_INCOMING_INTERVAL=60   # Scan Incoming toutes les 60s
-
-      # ── qBittorrent : dossier de surveillance des torrents terminés
-      # Doit correspondre au point de montage du volume /qbt-category ci-dessus
-      - MANGAARR_QBT_WATCH=/qbt-category
-
-      # ── qBittorrent : chemin côté qBittorrent (optionnel — utilisé pour créer la catégorie automatiquement)
-      # Si ta catégorie est déjà configurée dans qBittorrent, tu peux laisser vide.
-      - MANGAARR_QBT_SAVE_PATH=/mnt/user/Download/complete/Mangaarr
-
-      # ── Dossier de stockage des .torrent téléchargés
-      - MANGAARR_TORRENT_FILES=/torrent_files
-
-      # ── Dossier de téléchargement Telegram (doit correspondre au volume /telegram)
-      - MANGAARR_TELEGRAM_WATCH=/telegram
-
+      # Fuseau horaire (seule variable utile à régler).
       - TZ=Europe/Paris
+
+      # ── Réglages avancés (facultatifs) ──────────────────────────
+      # Tout le reste a déjà des valeurs par défaut dans l'image :
+      #   MANGAARR_QBT_WATCH=/qbt-category   MANGAARR_TORRENT_FILES=/torrent_files
+      #   MANGAARR_DEST=/media   MANGAARR_INCOMING=/incoming   MANGAARR_TELEGRAM_WATCH=/telegram
+      # Décommente seulement si tu veux changer le défaut :
+      # - MANGAARR_INCOMING_INTERVAL=60   # Fréquence du scan Incoming (secondes)
+      # - MANGAARR_PORT=7474              # Port HTTP interne

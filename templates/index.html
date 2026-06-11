@@ -366,14 +366,14 @@
     <div class="settings-card">
       <h2>Dossier de surveillance qBittorrent</h2>
       <p class="hint">
-        Défini via <code>MANGAARR_QBT_WATCH</code> dans ton <code>docker-compose.yml</code> — pas besoin de le configurer ici.<br>
+        Chemin interne fixe <code>/qbt-category</code> — monte ce volume sur le dossier où qBittorrent dépose les torrents terminés. Rien à configurer ici.<br>
         MangaArr surveille ce dossier toutes les 60s et traite automatiquement les fichiers téléchargés.
       </p>
       <div class="form-row">
         <label>Chemin actif</label>
         <input type="text" id="qbt-watch-dir" class="text-input" readonly
                style="background:var(--bg-input);color:var(--text-dim);cursor:default"
-               placeholder="Défini par MANGAARR_QBT_WATCH dans docker-compose.yml">
+               placeholder="/qbt-category (monté via le volume docker)">
       </div>
     </div>
 

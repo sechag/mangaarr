@@ -23,23 +23,33 @@ RUN pip install --no-cache-dir --root-user-action=ignore -r requirements.txt
 
 COPY . .
 
-# Dossiers internes persistants
-RUN mkdir -p /data/config /data/cache /data/emulecollections
+# Dossiers internes + points de montage (existent même si un volume n'est pas monté)
+RUN mkdir -p /data/config /data/cache /data/emulecollections \
+             /incoming /media /qbt-category /torrent_files /telegram
 
-# ── Variables d'environnement ──────────────────────────
+# ══════════════════════════════════════════════════════════════
+#  Variables d'environnement — CHEMINS INTERNES AU CONTENEUR
+#  Ces valeurs sont FIXES : l'utilisateur n'a PAS à les redéfinir.
+#  Il suffit de monter ses dossiers hôte sur ces points dans les
+#  `volumes:` du docker-compose (ex. /mon/dossier/Mangas:/media).
+# ══════════════════════════════════════════════════════════════
 ENV MANGAARR_PORT=7474
 ENV MANGAARR_CONFIG=/data/config/config.json
-
-# Chemins montés via volumes — définis dans docker-compose / Unraid template
-# MANGAARR_INCOMING : dossier eMule/aMule Incoming (lecture des téléchargements finis)
+# Dossier eMule/aMule Incoming (lecture des téléchargements finis)
 ENV MANGAARR_INCOMING=/incoming
-# MANGAARR_DEST : dossier de destination des séries (là où vont les fichiers traités)
+# Dossier de destination des séries (là où vont les fichiers traités)
 ENV MANGAARR_DEST=/media
-# MANGAARR_CACHE : cache metadata MangaDB + covers (persistant)
+# Cache metadata MangaDB + covers (persistant)
 ENV MANGAARR_CACHE=/data/cache
-# MANGAARR_EMULE : dossier de sortie des .emulecollection
+# Dossier de sortie des .emulecollection
 ENV MANGAARR_EMULE=/data/emulecollections
-# MANGAARR_INCOMING_INTERVAL : fréquence du scan Incoming en secondes (défaut: 60)
+# Dossier surveillé pour les torrents qBittorrent terminés
+ENV MANGAARR_QBT_WATCH=/qbt-category
+# Stockage des .torrent téléchargés avant envoi à qBittorrent
+ENV MANGAARR_TORRENT_FILES=/torrent_files
+# Dossier de téléchargement Telegram
+ENV MANGAARR_TELEGRAM_WATCH=/telegram
+# Fréquence du scan Incoming en secondes
 ENV MANGAARR_INCOMING_INTERVAL=60
 
 EXPOSE 7474

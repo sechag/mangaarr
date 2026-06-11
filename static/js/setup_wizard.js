@@ -165,6 +165,7 @@
   // ══════════════════════════════════════════════════════
   async function render() {
     renderRail();
+    W.flush = null;   // chaque étape peut définir une sauvegarde différée (formulaire non soumis)
     const key = PANES[W.pane];
     const body = $('#setup-body');
     const foot = $('#setup-foot');
@@ -190,7 +191,7 @@
     const step = CONFIG_STEPS.find(s => s.key === key);
     const isOpt = step && (step.optional || !step.required);
     const skipBtn = (step && step.optional)
-      ? `<button class="skip" data-act="next">Passer cette étape →</button>` : '';
+      ? `<button class="skip" data-act="skip">Passer cette étape →</button>` : '';
     const nextLbl = 'Continuer →';
     return `<button class="setup-ghost" data-act="prev">← Précédent</button>
             <div class="spacer"></div>
@@ -205,6 +206,7 @@
         if (act === 'quit')   return quitConfirm();
         if (act === 'prev')   return prev();
         if (act === 'finish') return finish(b);
+        if (act === 'skip')   return skip();
         if (act === 'next')   return next(b);
       });
     });
@@ -212,6 +214,14 @@
 
   async function next(btn) {
     const key = PANES[W.pane];
+    // Sauvegarde différée : si un formulaire est rempli mais non soumis, on l'enregistre
+    if (W.flush) {
+      if (btn) setLoading(btn, true);
+      let res;
+      try { res = await W.flush(); } catch (_) { res = null; }
+      if (btn) setLoading(btn, false);
+      if (res && res.block) return;   // échec d'enregistrement → reste sur l'étape, erreur affichée
+    }
     // Validation bloquante : librairies obligatoires
     if (key === 'libraries' && W.state.libraries.length === 0) {
       flashStatus('lib-status', 'error', 'Ajoutez au moins une librairie pour continuer.');
@@ -226,6 +236,7 @@
     if (W.pane < PANES.length - 1) { W.pane++; render(); }
   }
   function prev() { if (W.pane > 0) { W.pane--; render(); } }
+  function skip() { if (W.pane < PANES.length - 1) { W.pane++; render(); } }   // avance sans flush (étape optionnelle ignorée)
 
   function quitConfirm() {
     if (confirm("Quitter l'assistant ? Vous pourrez le relancer depuis Settings → Stockage. La configuration déjà saisie est conservée.")) {
@@ -275,6 +286,93 @@
   }
 
   // ══════════════════════════════════════════════════════
+  // SÉLECTEUR DE DOSSIERS (réutilise /api/browse)
+  // ══════════════════════════════════════════════════════
+  const FOLDER_ICON = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.93a2 2 0 0 1-1.66-.9l-.82-1.2A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z"/></svg>`;
+  const CHEVRON = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="width:14px;height:14px"><path d="m9 18 6-6-6-6"/></svg>`;
+
+  function browseBtn() {
+    return `<button type="button" class="setup-browse" data-browse>${FOLDER_ICON}<span>Parcourir</span></button>`;
+  }
+  // Lie tous les boutons "Parcourir" d'un conteneur à l'input qui les précède
+  function bindBrowse(root) {
+    $$('[data-browse]', root).forEach(btn => {
+      btn.addEventListener('click', () => {
+        const input = btn.parentElement.querySelector('input.text-input');
+        if (input) openFolderPicker(input);
+      });
+    });
+  }
+
+  let _pickPath = '/';
+  function ensurePicker() {
+    if ($('#setup-picker')) return;
+    const el = document.createElement('div');
+    el.id = 'setup-picker';
+    el.innerHTML = `
+      <div class="setup-pick-card">
+        <div class="setup-pick-head"><h3>Choisir un dossier</h3><button class="x" data-pk="close">✕</button></div>
+        <div class="setup-pick-bread">
+          <button class="setup-pick-up" data-pk="up">↑ Dossier parent</button>
+          <span id="setup-pick-cwd"></span>
+        </div>
+        <div class="setup-pick-list" id="setup-pick-list"></div>
+        <div class="setup-pick-foot">
+          <div class="cur">Sélection : <b id="setup-pick-sel">—</b></div>
+          <button class="btn btn-secondary" data-pk="close" style="padding:9px 16px">Annuler</button>
+          <button class="btn btn-primary" data-pk="choose">Choisir ce dossier</button>
+        </div>
+      </div>`;
+    document.body.appendChild(el);
+    el.addEventListener('click', e => { if (e.target === el) closePicker(); });
+    $('[data-pk="close"]', el).addEventListener('click', closePicker);
+    $('[data-pk="up"]', el).addEventListener('click', () => { if (W._pickParent != null) loadPick(W._pickParent); });
+    $('[data-pk="choose"]', el).addEventListener('click', () => {
+      if (W._pickInput) { W._pickInput.value = _pickPath; W._pickInput.dispatchEvent(new Event('input', { bubbles: true })); }
+      closePicker();
+    });
+  }
+  function closePicker() { const p = $('#setup-picker'); if (p) p.classList.remove('show'); W._pickInput = null; }
+
+  function openFolderPicker(inputEl) {
+    ensurePicker();
+    W._pickInput = inputEl;
+    const start = (inputEl.value || '').trim() || '/';
+    $('#setup-picker').classList.add('show');
+    loadPick(start);
+  }
+
+  async function loadPick(path) {
+    const list = $('#setup-pick-list');
+    list.innerHTML = `<div class="setup-pick-empty">Chargement…</div>`;
+    let r = await sapi('/browse?path=' + encodeURIComponent(path));
+    if (!r || r.ok === false) {
+      // chemin invalide → retombe sur la racine
+      if (path !== '/') { return loadPick('/'); }
+      list.innerHTML = `<div class="setup-pick-empty">${esc((r && r.message) || 'Dossier inaccessible')}</div>`;
+      return;
+    }
+    _pickPath = r.current || path;
+    W._pickParent = r.parent;
+    $('#setup-pick-cwd').textContent = _pickPath;
+    $('#setup-pick-sel').textContent = _pickPath;
+    $('.setup-pick-up').disabled = (r.parent == null);
+    const entries = r.entries || [];
+    if (!entries.length) {
+      list.innerHTML = `<div class="setup-pick-empty">Aucun sous-dossier ici.<br><span style="font-size:12px">Vous pouvez choisir ce dossier avec le bouton ci-dessous.</span></div>`;
+      return;
+    }
+    list.innerHTML = entries.map(e => `
+      <div class="setup-pick-row" data-go="${esc(e.path)}">
+        <span class="fi">${FOLDER_ICON}</span>
+        <span class="nm">${esc(e.name)}</span>
+        ${e.sub_count ? `<span class="ct">${e.sub_count} dossier(s)</span>` : ''}
+        <span class="go">${CHEVRON}</span>
+      </div>`).join('');
+    $$('.setup-pick-row', list).forEach(row => row.addEventListener('click', () => loadPick(row.dataset.go)));
+  }
+
+  // ══════════════════════════════════════════════════════
   // RENDERERS — un par vue
   // ══════════════════════════════════════════════════════
   const RENDERERS = {
@@ -308,9 +406,9 @@
         <div class="setup-added" id="lib-list"></div>
         <div class="setup-block">
           <h4>Ajouter une librairie</h4>
-          <div class="setup-row2">
-            <div class="setup-field"><label>Nom</label><input type="text" class="text-input" id="lib-name" placeholder="ex : Mangas"></div>
-            <div class="setup-field"><label>Chemin du dossier</label><input type="text" class="text-input" id="lib-path" placeholder="/media/Mangas"></div>
+          <div class="setup-field"><label>Nom</label><input type="text" class="text-input" id="lib-name" placeholder="ex : Mangas"></div>
+          <div class="setup-field"><label>Chemin du dossier</label>
+            <div class="setup-path"><input type="text" class="text-input" id="lib-path" placeholder="/media/Mangas">${browseBtn()}</div>
           </div>
           <button class="btn btn-primary" id="lib-add">+ Ajouter la librairie</button>
           <div class="setup-status" id="lib-status"></div>
@@ -318,25 +416,29 @@
       bind: async (root) => {
         await reloadLibraries();
         renderLibList();
+        bindBrowse(root);
         const addBtn = $('#lib-add', root);
-        const doAdd = async () => {
+        // Renvoie true si ajouté (ou rien à ajouter), false si échec
+        const addLib = async (silentEmpty) => {
           const name = $('#lib-name', root).value.trim();
           const path = $('#lib-path', root).value.trim();
-          if (!name || !path) { flashStatus('lib-status', 'error', 'Nom et chemin requis.'); return; }
-          setLoading(addBtn, true);
+          if (!name && !path) { if (!silentEmpty) flashStatus('lib-status', 'error', 'Nom et chemin requis.'); return true; }
+          if (!name || !path) { flashStatus('lib-status', 'error', 'Nom et chemin requis.'); return false; }
           flashStatus('lib-status', 'load', 'Vérification du dossier…', true);
           const r = await sapi('/libraries', 'POST', { name, path });
-          setLoading(addBtn, false);
           if (r.ok) {
             $('#lib-name', root).value = ''; $('#lib-path', root).value = '';
             flashStatus('lib-status', 'ok', 'Librairie ajoutée ✓');
             await reloadLibraries(); renderLibList(); renderRail();
-          } else {
-            flashStatus('lib-status', 'error', r.message || "Échec — vérifiez le chemin.");
+            return true;
           }
+          flashStatus('lib-status', 'error', r.message || "Échec — vérifiez le chemin.");
+          return false;
         };
-        addBtn.addEventListener('click', doAdd);
-        $('#lib-path', root).addEventListener('keydown', e => { if (e.key === 'Enter') doAdd(); });
+        addBtn.addEventListener('click', async () => { setLoading(addBtn, true); await addLib(false); setLoading(addBtn, false); });
+        $('#lib-path', root).addEventListener('keydown', async e => { if (e.key === 'Enter') { setLoading(addBtn, true); await addLib(false); setLoading(addBtn, false); } });
+        // Flush : enregistre une saisie en attente avant de continuer
+        W.flush = async () => ({ block: !(await addLib(true)) });
       },
     },
 
@@ -390,29 +492,32 @@
         };
         typeSel.addEventListener('change', sync); sync();
 
-        $('#dc-add', root).addEventListener('click', async (e) => {
+        // addClient : renvoie true si enregistré (ou rien à ajouter), false si échec d'enregistrement
+        const addClient = async (silentEmpty) => {
           const type = typeSel.value;
           const name = $('#dc-name', root).value.trim();
           const host = $('#dc-host', root).value.trim();
-          if (!name || !host) { flashStatus('dc-status', 'error', 'Nom et host requis.'); return; }
+          if (!name && !host) { if (!silentEmpty) flashStatus('dc-status', 'error', 'Nom et host requis.'); return true; }
+          if (!name || !host) { flashStatus('dc-status', 'error', 'Nom et host requis.'); return false; }
           const payload = (type === 'amule')
             ? { type, name, host, ec_port: +$('#dc-ecport', root).value || 4712, password: $('#dc-ecpass', root).value }
             : { type, name, host, port: +$('#dc-port', root).value || 8080,
                 username: $('#dc-user', root).value.trim(), password: $('#dc-pass', root).value,
                 category: $('#dc-category', root).value.trim() };
-          setLoading(e.target, true);
           flashStatus('dc-status', 'load', 'Ajout…', true);
           const r = await sapi('/settings/download-clients', 'POST', payload);
-          if (!r.ok) { setLoading(e.target, false); flashStatus('dc-status', 'error', r.message || 'Échec.'); return; }
-          // Test de connexion
+          if (!r.ok) { flashStatus('dc-status', 'error', r.message || 'Échec.'); return false; }
+          // Enregistré : un test KO n'annule pas l'ajout (on ne bloque pas)
           flashStatus('dc-status', 'load', 'Test de connexion…', true);
           const t = await sapi(`/settings/download-clients/${r.client.id}/test`, 'POST');
-          setLoading(e.target, false);
           await reloadClients(); renderDcList(); renderRail();
           if (t.ok) flashStatus('dc-status', 'ok', 'Connecté ✓ ' + (t.message || ''));
-          else flashStatus('dc-status', 'error', 'Ajouté mais connexion KO : ' + (t.message || ''));
+          else flashStatus('dc-status', 'error', 'Ajouté ✓ mais connexion KO : ' + (t.message || ''));
           ['dc-name','dc-host','dc-user','dc-pass','dc-ecpass'].forEach(id => { const el = $('#' + id, root); if (el) el.value = ''; });
-        });
+          return true;
+        };
+        $('#dc-add', root).addEventListener('click', async (e) => { setLoading(e.target, true); await addClient(false); setLoading(e.target, false); });
+        W.flush = async () => ({ block: !(await addClient(true)) });
       },
     },
 
@@ -446,6 +551,12 @@
         <div class="setup-block" id="ebdz-source-block" style="display:none">
           <h4>Source de scraping &amp; librairies liées</h4>
           <div class="desc">Choisissez la catégorie ebdz à surveiller et reliez-la à la/les librairie(s) où ranger les téléchargements.</div>
+          <div class="setup-presets" id="ebdz-presets">
+            <button type="button" class="setup-preset" data-cat="Mangas" data-fid="29">📗 Mangas <span class="tag">fid=29</span></button>
+            <button type="button" class="setup-preset warn" data-cat="BD" data-fid="23">📘 BD <span class="tag">fid=23 · limité</span></button>
+            <button type="button" class="setup-preset warn" data-cat="Comics" data-fid="24">📕 Comics <span class="tag">fid=24 · limité</span></button>
+          </div>
+          <div class="setup-note warn" style="margin-bottom:14px"><span class="ni">⚠️</span><div class="nc"><b>Mangas</b> est la catégorie pleinement prise en charge. La gestion des <b>BD</b> et <b>Comics</b> est encore <b>limitée</b> dans MangaArr (détection des tomes / renommage parfois imparfaits).</div></div>
           <div class="setup-row2">
             <div class="setup-field"><label>Nom de la source</label><input type="text" class="text-input" id="ebdz-src-name" value="Mangas"></div>
             <div class="setup-field"><label>Fréquence d'actualisation</label>
@@ -472,6 +583,20 @@
         const renderLibs = () => { $('#ebdz-libs', root).innerHTML = libCheckHtml(W.state.ebdzLibIds || []); bindLibChecks($('#ebdz-libs', root)); };
         renderLibs();
 
+        // Presets de catégories ebdz (URLs exactes)
+        const FIDS = { '29': 'Mangas', '23': 'BD', '24': 'Comics' };
+        const syncPreset = () => {
+          const url = $('#ebdz-src-url', root).value;
+          $$('#ebdz-presets .setup-preset', root).forEach(p => p.classList.toggle('sel', url.indexOf('fid=' + p.dataset.fid) !== -1));
+        };
+        $$('#ebdz-presets .setup-preset', root).forEach(p => p.addEventListener('click', () => {
+          $('#ebdz-src-name', root).value = p.dataset.cat;
+          $('#ebdz-src-url', root).value  = `https://ebdz.net/forum/forumdisplay.php?fid=${p.dataset.fid}`;
+          syncPreset();
+        }));
+        $('#ebdz-src-url', root).addEventListener('input', syncPreset);
+        syncPreset();
+
         $('#ebdz-check', root).addEventListener('click', async (e) => {
           const cookie = $('#ebdz-cookie', root).value.trim();
           if (!cookie) { flashStatus('ebdz-status', 'error', 'Collez la valeur du cookie.'); return; }
@@ -490,27 +615,27 @@
           }
         });
 
-        $('#ebdz-link', root).addEventListener('click', async (e) => {
+        // saveSource : enregistre la source ebdz (renvoie true si OK / rien à faire)
+        const saveSource = async () => {
+          if (!W.state.cookieOk) return true;   // pas de cookie → rien à enregistrer
           const name = $('#ebdz-src-name', root).value.trim() || 'Mangas';
           const url  = $('#ebdz-src-url', root).value.trim();
           const libIds = selectedLibIds($('#ebdz-libs', root));
           W.state.ebdzLibIds = libIds;
-          if (!url) { flashStatus('ebdz-link-status', 'error', 'URL requise.'); return; }
-          setLoading(e.target, true);
+          if (!url) { flashStatus('ebdz-link-status', 'error', 'URL de catégorie requise.'); return false; }
           flashStatus('ebdz-link-status', 'load', 'Enregistrement…', true);
           // La source par défaut "manga" existe toujours (DEFAULTS) → on la met à jour
           const patch = await sapi('/ebdz/sources/manga', 'PATCH', { name, url, library_ids: libIds });
-          // Fréquence de scrape
           await sapi('/settings/scrape-interval', 'POST', { interval_hours: +$('#ebdz-interval', root).value || 24 });
-          setLoading(e.target, false);
-          if (patch.ok) { W.state.ebdzLinked = true; flashStatus('ebdz-link-status', 'ok', 'Source enregistrée ✓'); }
-          else {
-            // Source absente → on la crée
-            const add = await sapi('/ebdz/sources', 'POST', { name, url, library_ids: libIds });
-            if (add.ok) { W.state.ebdzLinked = true; flashStatus('ebdz-link-status', 'ok', 'Source créée ✓'); }
-            else flashStatus('ebdz-link-status', 'error', (patch.message || add.message) || 'Échec.');
-          }
-        });
+          if (patch.ok) { W.state.ebdzLinked = true; flashStatus('ebdz-link-status', 'ok', 'Source enregistrée ✓'); return true; }
+          const add = await sapi('/ebdz/sources', 'POST', { name, url, library_ids: libIds });
+          if (add.ok) { W.state.ebdzLinked = true; flashStatus('ebdz-link-status', 'ok', 'Source créée ✓'); return true; }
+          flashStatus('ebdz-link-status', 'error', (patch.message || add.message) || 'Échec.');
+          return false;
+        };
+        $('#ebdz-link', root).addEventListener('click', async (e) => { setLoading(e.target, true); await saveSource(); setLoading(e.target, false); });
+        // Flush : enregistre la source si le cookie est validé mais la source non encore sauvegardée
+        W.flush = async () => ({ block: !(await saveSource()) });
       },
     },
 
@@ -588,21 +713,30 @@
       bind: async (root) => {
         await reloadMetadata(); renderMetaList();
         $('#meta-libs', root).innerHTML = libCheckHtml(); bindLibChecks($('#meta-libs', root));
-        $('#meta-add', root).addEventListener('click', async (e) => {
+        // Enregistre la fréquence même si aucune source n'est ajoutée
+        const saveFreq = () => sapi('/metadata/sync-interval', 'POST', { interval_hours: +$('#meta-freq', root).value || 0 });
+        $('#meta-freq', root).addEventListener('change', saveFreq);
+        // addMeta : renvoie true si ajouté (ou rien à ajouter), false si échec
+        const addMeta = async (silentEmpty) => {
           const name = $('#meta-name', root).value.trim() || 'MangaDB';
           const url  = $('#meta-url', root).value.trim();
-          if (!url) { flashStatus('meta-status', 'error', 'URL requise.'); return; }
-          setLoading(e.target, true);
-          flashStatus('meta-status', 'load', 'Test de connexion…', true);
+          if (!url) { if (!silentEmpty) flashStatus('meta-status', 'error', 'URL requise.'); return true; }
+          flashStatus('meta-status', 'load', 'Test de connexion à MangaDB…', true);
           const r = await sapi('/metadata/sources', 'POST', { name, url, library_ids: selectedLibIds($('#meta-libs', root)) });
-          await sapi('/metadata/sync-interval', 'POST', { interval_hours: +$('#meta-freq', root).value || 0 });
-          setLoading(e.target, false);
+          await saveFreq();
           if (r.ok) {
-            flashStatus('meta-status', 'ok', r.message || 'Source ajoutée ✓');
+            flashStatus('meta-status', 'ok', r.message || 'Source enregistrée ✓');
             $('#meta-url', root).value = '';
             await reloadMetadata(); renderMetaList(); renderRail();
-          } else flashStatus('meta-status', 'error', r.message || 'Échec.');
-        });
+            return true;
+          }
+          // Échec = MangaDB injoignable ou URL invalide → la source n'est PAS enregistrée
+          flashStatus('meta-status', 'error', (r.message || 'Échec') + ' — source non enregistrée. Vérifiez l\'URL (accessible depuis le conteneur).');
+          return false;
+        };
+        $('#meta-add', root).addEventListener('click', async (e) => { setLoading(e.target, true); await addMeta(false); setLoading(e.target, false); });
+        // Flush : tente d'enregistrer la source saisie avant de continuer (corrige la perte silencieuse)
+        W.flush = async () => ({ block: !(await addMeta(true)) });
       },
     },
 
@@ -623,22 +757,24 @@
         </div>`,
       bind: async (root) => {
         await reloadTorznab(); renderTzList();
-        $('#tz-add', root).addEventListener('click', async (e) => {
+        const addTz = async (silentEmpty) => {
           const name = $('#tz-name', root).value.trim();
           const url  = $('#tz-url', root).value.trim();
           const apikey = $('#tz-key', root).value.trim();
-          if (!name || !url) { flashStatus('tz-status', 'error', 'Nom et URL requis.'); return; }
-          setLoading(e.target, true);
+          if (!name && !url) { if (!silentEmpty) flashStatus('tz-status', 'error', 'Nom et URL requis.'); return true; }
+          if (!name || !url) { flashStatus('tz-status', 'error', 'Nom et URL requis.'); return false; }
           flashStatus('tz-status', 'load', 'Ajout…', true);
           const r = await sapi('/indexers/torznab', 'POST', { name, url, apikey });
-          if (!r.ok) { setLoading(e.target, false); flashStatus('tz-status', 'error', r.message || 'Échec.'); return; }
+          if (!r.ok) { flashStatus('tz-status', 'error', r.message || 'Échec.'); return false; }
           flashStatus('tz-status', 'load', 'Test…', true);
           const t = await sapi(`/indexers/torznab/${r.indexer.id}/test`, 'POST');
-          setLoading(e.target, false);
           await reloadTorznab(); renderTzList(); renderRail();
-          flashStatus('tz-status', t.ok ? 'ok' : 'error', (t.ok ? 'Indexer OK ✓ ' : 'Ajouté mais test KO : ') + (t.message || ''));
+          flashStatus('tz-status', t.ok ? 'ok' : 'error', (t.ok ? 'Indexer OK ✓ ' : 'Ajouté ✓ mais test KO : ') + (t.message || ''));
           ['tz-name','tz-url','tz-key'].forEach(id => $('#' + id, root).value = '');
-        });
+          return true;
+        };
+        $('#tz-add', root).addEventListener('click', async (e) => { setLoading(e.target, true); await addTz(false); setLoading(e.target, false); });
+        W.flush = async () => ({ block: !(await addTz(true)) });
       },
     },
 
