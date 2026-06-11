@@ -47,9 +47,9 @@ Seule la colonne « Ton dossier hôte » te concerne. Le chemin conteneur est fi
 
 | Ton dossier hôte (à adapter) | Chemin conteneur (fixe) | Rôle | Obligatoire ? |
 |---|---|---|---|
-| `./data/config` | `/data/config` | Config persistante | ✅ (laisse tel quel) |
-| `./data/cache` | `/data/cache` | Cache metadata + couvertures | ✅ (laisse tel quel) |
-| `./data/emulecollections` | `/data/emulecollections` | Fichiers `.emulecollection` | ✅ (laisse tel quel) |
+| `/mnt/user/appdata/mangaarr/config` | `/data/config` | Config persistante | ✅ Oui |
+| `/mnt/user/appdata/mangaarr/cache` | `/data/cache` | Cache metadata + couvertures | ✅ Oui |
+| `/mnt/user/appdata/mangaarr/emulecollections` | `/data/emulecollections` | Fichiers `.emulecollection` | ✅ Oui |
 | Ton dossier Incoming aMule | `/incoming` | Téléchargements eMule/aMule finis | Si tu utilises eMule/aMule |
 | Ta bibliothèque manga | `/media` | Destination des séries traitées | ✅ Oui |
 | Dossier de la catégorie qBittorrent | `/qbt-category` | Torrents terminés à traiter | Si tu utilises qBittorrent |
