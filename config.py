@@ -9,6 +9,7 @@ CONFIG_FILE = os.environ.get(
 )
 
 DEFAULTS = {
+    "setup_completed": False,   # passe à True après l'assistant de premier lancement
     "mybbuser": "",
     "download_dir": "",
     "libraries": [],           # [{id, name, path}] — librairies locales

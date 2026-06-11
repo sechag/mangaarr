@@ -7,6 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/static/css/app.css">
+<link rel="stylesheet" href="/static/css/setup.css">
 </head>
 <body>
 
@@ -655,6 +656,13 @@
         Vos fichiers manga et vos données Komga ne sont pas affectés.
       </p>
     </div>
+    <div class="settings-card">
+      <h2>Assistant de configuration</h2>
+      <p class="hint">Relancez l'assistant de premier lancement pour reconfigurer librairies, clients de téléchargement, sources et automatisation, étape par étape.</p>
+      <div class="form-actions">
+        <button class="btn btn-secondary" onclick="openSetupWizard()">↻ Relancer l'assistant de configuration</button>
+      </div>
+    </div>
   </div>
 
 
@@ -979,6 +987,9 @@
     </div>
   </div>
 </div>
+
+<!-- ── Assistant de premier lancement (s'auto-injecte si la config n'est pas faite) ── -->
+<script src="/static/js/setup_wizard.js"></script>
 
 </body>
 </html>

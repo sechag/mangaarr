@@ -122,6 +122,51 @@ def api_set_config():
 
 
 # ════════════════════════════════════════════════════════
+# SETUP — ASSISTANT DE PREMIER LANCEMENT
+# ════════════════════════════════════════════════════════
+
+@app.route("/api/setup/status", methods=["GET"])
+def api_setup_status():
+    """Indique si l'assistant de configuration doit s'afficher.
+
+    Affiché uniquement lors d'un VRAI premier lancement : si l'install
+    possède déjà une configuration utile (librairies, clients, cookie ebdz),
+    on considère le setup comme fait pour ne pas importuner les utilisateurs
+    qui mettent à jour depuis une version sans ce flag.
+    """
+    cfg = config.load()
+    completed = bool(cfg.get("setup_completed", False))
+    if not completed:
+        already_configured = bool(
+            cfg.get("libraries")
+            or cfg.get("download_clients")
+            or cfg.get("mybbuser")
+            or cfg.get("metadata_sources")
+        )
+        if already_configured:
+            # Migration silencieuse : marque comme terminé pour les installs existantes
+            config.set_value("setup_completed", True)
+            completed = True
+    return jsonify({
+        "completed":  completed,
+        "needed":     not completed,
+    })
+
+@app.route("/api/setup/complete", methods=["POST"])
+def api_setup_complete():
+    """Marque l'assistant comme terminé (ne sera plus affiché au démarrage)."""
+    config.set_value("setup_completed", True)
+    config.add_log("Assistant de configuration terminé", "info")
+    return jsonify({"ok": True})
+
+@app.route("/api/setup/reset", methods=["POST"])
+def api_setup_reset():
+    """Réaffiche l'assistant au prochain chargement (debug / reconfiguration)."""
+    config.set_value("setup_completed", False)
+    return jsonify({"ok": True})
+
+
+# ════════════════════════════════════════════════════════
 # INDEXERS
 # ════════════════════════════════════════════════════════
 
