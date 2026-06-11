@@ -417,10 +417,19 @@ def api_ebdz_series_tomes():
             continue
         for s in series_list:
             if s["name"].lower() == name_lower:
-                owned = sorted([
-                    t["numero"] for t in s.get("tomes", [])
-                    if t.get("numero") is not None
-                ])
+                # Tag par tome (garde le meilleur score si plusieurs fichiers pour un tome)
+                tome_tags = {}
+                for t in s.get("tomes", []):
+                    n = t.get("numero")
+                    if n is None:
+                        continue
+                    fn  = t.get("filename", "")
+                    tag = profiles.detect_tag(fn) if fn else "Notag"
+                    score = profiles.get_tag_score(tag)
+                    if n not in tome_tags or score > tome_tags[n]["score"]:
+                        tome_tags[n] = {"tag": tag, "score": score}
+                owned = sorted(tome_tags.keys())
+                owned_detail = [{"numero": n, "tag": tome_tags[n]["tag"]} for n in owned]
                 meta  = cache_mod.get_series_meta(lib["id"], s["id"]) or {}
                 total = 0
                 try:
@@ -429,12 +438,13 @@ def api_ebdz_series_tomes():
                     pass
                 missing = [n for n in range(1, total + 1) if n not in owned] if total else []
                 return jsonify({
-                    "ok":      True,
-                    "name":    s["name"],
-                    "owned":   owned,
-                    "missing": missing,
-                    "total":   total,
-                    "slug":    f"{s['name']}--{s['id']}",
+                    "ok":           True,
+                    "name":         s["name"],
+                    "owned":        owned,
+                    "owned_detail": owned_detail,
+                    "missing":      missing,
+                    "total":        total,
+                    "slug":         f"{s['name']}--{s['id']}",
                 })
     return jsonify({"ok": False, "message": "Série non trouvée dans la collection"})
 
@@ -2139,14 +2149,15 @@ def api_mangadb_search_for_series(series_slug):
         raw = mangadb_client.search_series(q, source_id=src_id)
         # Retourne le résultat complet pour éviter un 2e appel au moment du lien
         results = [{
-            "titre":     r.get("titre", ""),
-            "score":     r.get("score", 0),
-            "auteur":    r.get("auteur", ""),
-            "editeur":   r.get("editeur", ""),
-            "statut":    r.get("statut_vf", r.get("statut", "")),
-            "tomes_vf":  r.get("tomes_vf", 0),
-            "genres":    r.get("genres", []),
-            "url":       r.get("manga_news_url", r.get("url", "")),
+            "titre":       r.get("titre", ""),
+            "score":       r.get("score", 0),
+            "auteur":      r.get("auteur", ""),
+            "editeur":     r.get("editeur", ""),
+            "statut":      r.get("statut_vf", r.get("statut", "")),
+            "tomes_vf":    r.get("tomes_vf", 0),
+            "genres":      r.get("genres", []),
+            "url":         r.get("manga_news_url", r.get("url", "")),
+            "source_name": r.get("source_name", ""),
         } for r in raw]
         return jsonify({"ok": True, "results": results[:10]})
     except Exception as e:

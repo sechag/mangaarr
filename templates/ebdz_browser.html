@@ -215,6 +215,18 @@
       text-overflow: ellipsis;
     }
     .sb-result-list li:hover { border-color: var(--accent); color: var(--accent); }
+    .sb-result-list li .src-badge {
+      display: inline-block; margin-left: 6px; padding: 0 6px;
+      font-size: 9px; font-weight: 600; border-radius: 10px;
+      background: rgba(124,106,255,.18); color: var(--accent);
+      border: 1px solid var(--accent); vertical-align: middle;
+    }
+    .sb-tomes-tag {
+      display: inline-block; margin: 1px 3px 1px 0; padding: 0 6px;
+      font-size: 9px; font-weight: 600; border-radius: 10px;
+      background: rgba(46,204,113,.15); color: var(--success, #2ecc71);
+      border: 1px solid rgba(46,204,113,.5);
+    }
 
     .sb-btn-add {
       background: var(--accent);
@@ -632,8 +644,13 @@
     try {
       const r = await fetch(`/api/ebdz-browser/series-tomes?name=${encodeURIComponent(name)}`).then(r => r.json());
       if (!r.ok) { info.style.display = 'none'; return; }
-      elOwned.textContent = r.owned.length
-        ? `✓ Possédés : ${r.owned.map(n => `T${String(n).padStart(2,'0')}`).join(', ')}`
+      const owned = r.owned_detail || (r.owned || []).map(n => ({ numero: n, tag: '' }));
+      elOwned.innerHTML = owned.length
+        ? '✓ Possédés : ' + owned.map(t => {
+            const tnum = `T${String(t.numero).padStart(2, '0')}`;
+            const tag  = (t.tag && t.tag !== 'Notag') ? ` <span class="sb-tomes-tag">${esc(t.tag)}</span>` : '';
+            return tnum + tag;
+          }).join(' ')
         : '✓ Aucun tome possédé';
       elMiss.textContent = r.missing.length
         ? `✗ Manquants : ${r.missing.map(n => `T${String(n).padStart(2,'0')}`).join(', ')}`
@@ -741,8 +758,10 @@
         } else {
           items.forEach(it => {
             const titre = it.titre || it.title || it.name || String(it);
+            const src   = it.source_name || '';
             const li = document.createElement('li');
-            li.textContent = titre;
+            li.innerHTML = esc(titre) + (src ? ` <span class="src-badge">${esc(src)}</span>` : '');
+            li.title = src ? `Source : ${src}` : titre;
             li.addEventListener('click', () => selectMangaDB(titre));
             ul.appendChild(li);
           });

@@ -267,6 +267,40 @@ body { display: flex; min-height: 100vh; }
 .status-msg.ok    { color: var(--success); }
 .status-msg.error { color: var(--danger); }
 
+/* ── SYNC BANNER (synchronisation metadata en cours) ── */
+.sync-banner {
+  display: flex; align-items: center; gap: 14px;
+  margin-bottom: 18px; padding: 13px 18px;
+  background: linear-gradient(90deg, var(--accent-dim), transparent 90%);
+  border: 1px solid var(--accent);
+  border-radius: var(--radius);
+  animation: sync-banner-in .3s ease;
+}
+@keyframes sync-banner-in { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: none; } }
+.sync-banner-spinner {
+  width: 18px; height: 18px; flex-shrink: 0;
+  border: 2.5px solid var(--accent-dim); border-top-color: var(--accent);
+  border-radius: 50%; animation: spin .7s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+.sync-banner-text { flex: 1; min-width: 0; line-height: 1.4; }
+.sync-banner-text strong { display: block; font-size: 13.5px; color: var(--text-head); }
+.sync-banner-text span { font-size: 12px; color: var(--text-dim); }
+.sync-banner-pct {
+  flex-shrink: 0; font-size: 15px; font-weight: 700; color: var(--accent);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── BADGE SOURCE METADATA (résultats de recherche) ── */
+.src-badge {
+  display: inline-flex; align-items: center;
+  padding: 1px 8px; border-radius: 20px;
+  font-size: 10px; font-weight: 600; letter-spacing: .02em;
+  background: var(--accent-dim); color: var(--accent);
+  border: 1px solid var(--accent);
+  white-space: nowrap;
+}
+
 /* ── RESULTS LIST ── */
 .results-list { margin-top: 16px; }
 .result-item {

@@ -852,15 +852,27 @@ function stopEnrichPoll() {
 function _updateEnrichIndicator(active, loaded, total) {
   const el  = document.getElementById('enrich-indicator');
   const lbl = document.getElementById('enrich-label');
-  if (!el) return;
-  el.style.display = active ? 'flex' : 'none';
-  if (active && lbl) {
-    if (loaded !== undefined && total !== undefined && total > 0) {
-      const pct = Math.round((loaded / total) * 100);
-      lbl.textContent = `${pct}%`;
-    } else {
-      lbl.textContent = '';
-    }
+  let pctStr = '';
+  if (active && loaded !== undefined && total !== undefined && total > 0) {
+    pctStr = Math.round((loaded / total) * 100) + '%';
+  }
+  if (el) {
+    el.style.display = active ? 'flex' : 'none';
+    if (active && lbl) lbl.textContent = pctStr;
+  }
+  // Banderole visible dans la Collection
+  _setSyncBanner(active, pctStr);
+}
+
+// Affiche/masque la banderole de synchronisation dans la page Collection
+function _setSyncBanner(active, pctStr, sub) {
+  const banner = document.getElementById('sync-banner');
+  if (!banner) return;
+  banner.style.display = active ? 'flex' : 'none';
+  if (active) {
+    const pctEl = document.getElementById('sync-banner-pct');
+    if (pctEl) pctEl.textContent = pctStr || '';
+    if (sub) { const subEl = document.getElementById('sync-banner-sub'); if (subEl) subEl.textContent = sub; }
   }
 }
 
@@ -1847,6 +1859,9 @@ async function syncMetadata() {
     return;
   }
 
+  // Banderole de synchronisation dans la Collection
+  _setSyncBanner(true, '', 'Lancement de la synchronisation des métadonnées…');
+
   // Poll toutes les 1.5s — timeout sécurité à 10 min
   const startTime = Date.now();
   const MAX_MS    = 10 * 60 * 1000;
@@ -1856,6 +1871,7 @@ async function syncMetadata() {
       clearInterval(poll);
       if (status) { status.textContent = 'Délai dépassé — vérifiez les logs'; status.className = 'status-msg error'; }
       if (btn) btn.disabled = false;
+      _setSyncBanner(false);
       return;
     }
 
@@ -1865,6 +1881,7 @@ async function syncMetadata() {
       const lbl = s.label || 'Synchronisé ✓';
       if (status) { status.textContent = lbl; status.className = 'status-msg ok'; }
       if (btn) btn.disabled = false;
+      _setSyncBanner(false);
       // Recharge la collection pour afficher les nouvelles infos
       const currentLib = document.getElementById('library-select').value;
       if (currentLib) loadSeries(currentLib);
@@ -1872,6 +1889,7 @@ async function syncMetadata() {
     } else {
       // Affiche la progression en direct
       if (status) { status.textContent = s.label || 'En cours…'; status.className = 'status-msg'; }
+      _setSyncBanner(true, '', s.label || 'Synchronisation en cours…');
     }
   }, 1500);
 }
@@ -2248,18 +2266,22 @@ async function searchSeriesToAdd() {
 
   const libId = (document.getElementById('library-select') || {}).value || '';
 
-  results.innerHTML = d.results.map(r => `
+  results.innerHTML = d.results.map(r => {
+    const srcBadge = r.source_name
+      ? `<span class="src-badge" title="Source des métadonnées">${esc(r.source_name)}</span>` : '';
+    return `
     <div style="display:flex;align-items:center;justify-content:space-between;
                 padding:10px 12px;background:var(--bg-input);border-radius:8px;border:1px solid var(--border)">
       <div>
-        <div style="font-size:13px;font-weight:500">${esc(r.titre)}</div>
+        <div style="font-size:13px;font-weight:500;display:flex;align-items:center;gap:8px">${esc(r.titre)}${srcBadge}</div>
         <div style="font-size:11px;color:var(--text-dim)">${esc(r.auteur||'')} · ${esc(r.statut||'')}</div>
       </div>
       <button class="btn btn-sm btn-primary"
               onclick="addSeriesToLibrary('${esc(r.titre)}', '${esc(libId)}')">
         + Ajouter
       </button>
-    </div>`).join('');
+    </div>`;
+  }).join('');
 }
 
 async function addSeriesToLibrary(mangadbTitre, libId) {

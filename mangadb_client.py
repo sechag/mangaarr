@@ -55,7 +55,11 @@ def search_series(title, source_id=None):
             r = requests.get(f"{_base(source)}/api/search",
                 params={"q": title, "threshold": 0.65, "limit": 5}, timeout=TIMEOUT)
             if r.status_code == 200:
-                results.extend(r.json().get("results", []))
+                for item in r.json().get("results", []):
+                    # Annote chaque résultat avec la source de métadonnées d'origine
+                    item["source_name"] = source.get("name", "MangaDB")
+                    item["source_id"]   = source.get("id", "")
+                    results.append(item)
         except: pass
     return results
 
