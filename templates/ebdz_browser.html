@@ -222,11 +222,23 @@
       border: 1px solid var(--accent); vertical-align: middle;
     }
     .sb-tomes-tag {
-      display: inline-block; margin: 1px 3px 1px 0; padding: 0 6px;
+      display: inline-block; padding: 0 6px;
       font-size: 9px; font-weight: 600; border-radius: 10px;
       background: rgba(46,204,113,.15); color: var(--success, #2ecc71);
       border: 1px solid rgba(46,204,113,.5);
+      white-space: nowrap;
     }
+    .sb-tomes-tag.notag {
+      background: rgba(150,150,150,.12); color: var(--text-dim);
+      border-color: rgba(150,150,150,.4);
+    }
+    .sb-tomes-head { font-weight: 600; margin-bottom: 3px; }
+    .sb-tag-row {
+      display: flex; gap: 6px; align-items: baseline;
+      margin: 2px 0; line-height: 1.35;
+    }
+    .sb-tag-row .sb-tomes-tag { flex-shrink: 0; }
+    .sb-tag-range { color: var(--text); opacity: .85; font-size: 10px; word-break: break-word; }
 
     .sb-btn-add {
       background: var(--accent);
@@ -634,6 +646,21 @@
     else info.style.display = 'none';
   }
 
+  // Compresse une liste de numéros en plages : [1,2,3,5,10,11] → "T01–T03, T05, T10–T11"
+  function tomeRanges(nums) {
+    const a = [...new Set(nums)].sort((x, y) => x - y);
+    const f = n => 'T' + String(n).padStart(2, '0');
+    const out = [];
+    let i = 0;
+    while (i < a.length) {
+      let j = i;
+      while (j + 1 < a.length && a[j + 1] === a[j] + 1) j++;
+      out.push(j > i ? `${f(a[i])}–${f(a[j])}` : f(a[i]));
+      i = j + 1;
+    }
+    return out.join(', ');
+  }
+
   async function loadSeriesTomes(name) {
     const info    = document.getElementById('sb-tomes-info');
     const elOwned = document.getElementById('sb-tomes-owned');
@@ -645,15 +672,25 @@
       const r = await fetch(`/api/ebdz-browser/series-tomes?name=${encodeURIComponent(name)}`).then(r => r.json());
       if (!r.ok) { info.style.display = 'none'; return; }
       const owned = r.owned_detail || (r.owned || []).map(n => ({ numero: n, tag: '' }));
-      elOwned.innerHTML = owned.length
-        ? '✓ Possédés : ' + owned.map(t => {
-            const tnum = `T${String(t.numero).padStart(2, '0')}`;
-            const tag  = (t.tag && t.tag !== 'Notag') ? ` <span class="sb-tomes-tag">${esc(t.tag)}</span>` : '';
-            return tnum + tag;
-          }).join(' ')
-        : '✓ Aucun tome possédé';
-      elMiss.textContent = r.missing.length
-        ? `✗ Manquants : ${r.missing.map(n => `T${String(n).padStart(2,'0')}`).join(', ')}`
+      if (owned.length) {
+        // Regroupe les tomes par tag, puis affiche des plages compactes (T01–T15)
+        const groups = {};
+        owned.forEach(t => { const tag = t.tag || 'Notag'; (groups[tag] = groups[tag] || []).push(t.numero); });
+        const rows = Object.entries(groups)
+          .sort((a, b) => Math.min(...a[1]) - Math.min(...b[1]))
+          .map(([tag, nums]) => {
+            const badge = (tag && tag !== 'Notag')
+              ? `<span class="sb-tomes-tag">${esc(tag)}</span>`
+              : `<span class="sb-tomes-tag notag">Sans tag</span>`;
+            return `<div class="sb-tag-row">${badge}<span class="sb-tag-range">${tomeRanges(nums)}</span></div>`;
+          }).join('');
+        const n = owned.length;
+        elOwned.innerHTML = `<div class="sb-tomes-head">✓ Possédés — ${n} tome${n > 1 ? 's' : ''}</div>${rows}`;
+      } else {
+        elOwned.innerHTML = '✓ Aucun tome possédé';
+      }
+      elMiss.innerHTML = r.missing.length
+        ? `✗ Manquants : ${tomeRanges(r.missing)}`
         : (r.total ? '✓ Collection complète !' : '');
     } catch(e) {
       info.style.display = 'none';

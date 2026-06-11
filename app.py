@@ -38,7 +38,7 @@ app = Flask(__name__, template_folder="templates", static_folder="static")
 app.secret_key = "mangaarr-secret-2024"
 
 # ── tâche arrière-plan ──────────────────────────────────
-_task = {"running": False, "label": "", "results": []}
+_task = {"running": False, "label": "", "results": [], "kind": ""}
 _lock = threading.Lock()
 def _set_task(**kw):
     with _lock: _task.update(kw)
@@ -1602,7 +1602,7 @@ def api_series_detect(series_slug):
     def _run():
         try:
             import folder_scanner
-            _set_task(running=True, label=f"Analyse '{info['name']}'…")
+            _set_task(running=True, label=f"Analyse '{info['name']}'…", kind="other")
             result = folder_scanner.detect_missing_from_disk(
                 info["path"].rsplit("/", 1)[0],   # dossier parent = librairie
                 serie_filter=info["name"],
@@ -2500,7 +2500,7 @@ def api_process():
     if _task["running"]:
         return jsonify({"ok": False, "message": "Tâche déjà en cours"})
     def _run():
-        _set_task(running=True, label="Traitement…", results=[])
+        _set_task(running=True, label="Traitement…", results=[], kind="other")
         has_sub = any(os.path.isdir(os.path.join(path, x)) for x in os.listdir(path))
         results = media_manager.scan_and_process_root(path) if has_sub else media_manager.process_series_folder(path)
         _set_task(running=False, label="Terminé", results=results)
@@ -2737,7 +2737,7 @@ def api_detect_missing():
         try:
             import folder_scanner
             def _progress(label):
-                _set_task(running=True, label=label)
+                _set_task(running=True, label=label, kind="other")
 
             total_added = 0
             all_details = []
@@ -2750,7 +2750,7 @@ def api_detect_missing():
                     app.logger.warning(f"[DetectMissing] Librairie '{lib_name}' introuvable : {lib_path}")
                     continue
 
-                _set_task(running=True, label=f"Analyse librairie '{lib_name}'…")
+                _set_task(running=True, label=f"Analyse librairie '{lib_name}'…", kind="other")
                 result = folder_scanner.detect_missing_from_disk(
                     lib_path,
                     progress_cb=_progress,
@@ -3427,7 +3427,7 @@ def api_metadata_sync():
 
     def _run():
         try:
-            _set_task(running=True, label="Chargement des données MangaDB…")
+            _set_task(running=True, label="Chargement des données MangaDB…", kind="meta_sync")
             import requests as _req, pandas as _pd
 
             sources = config.get("metadata_sources", [])

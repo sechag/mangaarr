@@ -31,6 +31,9 @@ function navigate(page) {
     'activity-queue':            loadQueue,
   };
   if (loaders[page]) loaders[page]();
+  // Surveille les synchros metadata (y compris planifiées) tant qu'on est dans la Collection
+  if (page === 'collection-local') startMetaSyncWatch();
+  else stopMetaSyncWatch();
 }
 
 // ══════════════════════════════════════════════════════════
@@ -40,6 +43,7 @@ function navigate(page) {
 window.addEventListener('DOMContentLoaded', () => {
   loadCollection();
   pollTaskStatus();
+  startMetaSyncWatch();   // page Collection active par défaut
   const hash = location.hash.replace('#','');
   if (hash) navigate(hash);
 });
@@ -868,12 +872,42 @@ function _updateEnrichIndicator(active, loaded, total) {
 function _setSyncBanner(active, pctStr, sub) {
   const banner = document.getElementById('sync-banner');
   if (!banner) return;
+  // Une synchro metadata serveur (planifiée/manuelle) maintient la banderole affichée
+  if (!active && _metaSyncRunning) { active = true; sub = sub || 'Synchronisation des métadonnées en cours…'; }
   banner.style.display = active ? 'flex' : 'none';
   if (active) {
     const pctEl = document.getElementById('sync-banner-pct');
     if (pctEl) pctEl.textContent = pctStr || '';
     if (sub) { const subEl = document.getElementById('sync-banner-sub'); if (subEl) subEl.textContent = sub; }
   }
+}
+
+// ── Surveillance des synchros metadata serveur (manuelles ET planifiées) ──
+let _metaSyncPoll = null, _metaSyncRunning = false, _metaSyncWasRunning = false;
+
+function startMetaSyncWatch() {
+  if (_metaSyncPoll) return;
+  pollMetaSync();                                  // vérif immédiate
+  _metaSyncPoll = setInterval(pollMetaSync, 2500);
+}
+function stopMetaSyncWatch() {
+  if (_metaSyncPoll) { clearInterval(_metaSyncPoll); _metaSyncPoll = null; }
+}
+async function pollMetaSync() {
+  try {
+    const s = await api('/media/status');
+    _metaSyncRunning = !!(s.running && s.kind === 'meta_sync');
+    if (_metaSyncRunning) {
+      _setSyncBanner(true, '', s.label || 'Synchronisation des métadonnées en cours…');
+      _metaSyncWasRunning = true;
+    } else if (_metaSyncWasRunning) {
+      // La synchro vient de se terminer → masque la banderole et rafraîchit la collection
+      _metaSyncWasRunning = false;
+      _setSyncBanner(false);
+      const lib = (document.getElementById('library-select') || {}).value;
+      if (lib) loadSeries(lib);
+    }
+  } catch (_) { /* silencieux */ }
 }
 
 async function pollEnrichEvents(libraryId) {
