@@ -43,6 +43,34 @@ def _normalize_ed2k(raw: str) -> str:
     return raw
 
 
+def _anchor_ed2k(a) -> str:
+    """
+    Détecte un lien ed2k porté par une ancre <a>, où qu'il soit :
+      1. dans href (ed2k:// ou variantes https://ed2k//)
+      2. dans un attribut JS/données (onclick, data-*… — cas des liens ebdz
+         rendus cliquables par leur propre JS, que l'on supprime)
+      3. dans le texte visible de l'ancre (ex. <a href="#">ed2k://…</a>)
+    Retourne l'URL ed2k normalisée, ou None.
+    """
+    href = (a.get("href") or "").strip()
+    if href.lower().startswith("ed2k://"):
+        return href
+    for pref, repl in _ED2K_PREFIXES:
+        if href.lower().startswith(pref):
+            return repl + href[len(pref):]
+    for attr in ("onclick", "data-link", "data-url", "data-href", "data-ed2k", "value"):
+        val = a.get(attr) or ""
+        if isinstance(val, list):
+            val = " ".join(val)
+        m = _ED2K_TEXT_RE.search(val)
+        if m:
+            return _normalize_ed2k(m.group(0))
+    m = _ED2K_TEXT_RE.search(a.get_text() or "")
+    if m:
+        return _normalize_ed2k(m.group(0))
+    return None
+
+
 def _collect_ed2k(raw: str, seen: set, links: list):
     """Nettoyage + normalisation + parse d'un candidat ed2k brut."""
     import ebdz_scraper
@@ -154,12 +182,26 @@ def fetch_and_rewrite(url: str, mybbuser: str) -> dict:
     for tag in soup.find_all("iframe"):
         tag.decompose()
 
-    # Réécrit les liens <a href>
-    for a in soup.find_all("a", href=True):
-        href = a["href"].strip()
+    # Réécrit les liens <a> (avec ou sans href)
+    for a in soup.find_all("a"):
+        # Détecte un ed2k où qu'il soit (href, attribut JS, ou texte) — AVANT
+        # le traitement des ancres « # », pour gérer <a href="#">ed2k://…</a>.
+        ed2k_url = _anchor_ed2k(a)
+        if ed2k_url is not None:
+            # Lien ed2k → un clic l'ajoute via postMessage vers la page parent
+            safe = ed2k_url.replace("\\", "\\\\").replace("'", "\\'")
+            a["href"] = "#"
+            a["onclick"] = f"parent.postMessage({{type:'ed2k',url:'{safe}'}}, '*'); return false;"
+            a["style"] = (a.get("style", "") +
+                          ";color:#f59e0b!important;font-weight:bold;cursor:pointer")
+            a["title"] = "Ajouter à la queue MangaArr"
+            if a.get("target"):
+                del a["target"]
+            continue
 
-        # Ancre pure (#contenant1, #contenant2…) → garde tel quel pour navigation intra-page
-        if href.startswith('#'):
+        href = (a.get("href") or "").strip()
+        # Ancre pure (#contenant1…) ou sans href → garde tel quel (navigation intra-page)
+        if not href or href.startswith('#'):
             continue
 
         try:
@@ -167,30 +209,7 @@ def fetch_and_rewrite(url: str, mybbuser: str) -> dict:
         except ValueError:
             continue
 
-        # Normalise les variantes https://ed2k//... → ed2k://...
-        ed2k_url = None
-        if href.lower().startswith("ed2k://"):
-            ed2k_url = href
-        else:
-            for pref, repl in [
-                ("https://ed2k//", "ed2k://"),
-                ("http://ed2k//",  "ed2k://"),
-                ("https://ed2k/",  "ed2k://"),
-                ("http://ed2k/",   "ed2k://"),
-            ]:
-                if href.lower().startswith(pref):
-                    ed2k_url = repl + href[len(pref):]
-                    break
-
-        if ed2k_url is not None:
-            # Lien ed2k → intercepte via postMessage vers la page parent
-            safe = ed2k_url.replace("\\", "\\\\").replace("'", "\\'")
-            a["href"] = "#"
-            a["onclick"] = f"parent.postMessage({{type:'ed2k',url:'{safe}'}}, '*'); return false;"
-            a["style"] = (a.get("style", "") +
-                          ";color:#f59e0b!important;font-weight:bold;cursor:pointer")
-            a["title"] = "Ajouter à la queue MangaArr"
-        elif abs_url.startswith(EBDZ_BASE):
+        if abs_url.startswith(EBDZ_BASE):
             frag_idx = abs_url.find('#')
             if frag_idx != -1:
                 # Lien interne avec fragment → envoie l'URL complète au parent via postMessage
