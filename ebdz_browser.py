@@ -12,10 +12,13 @@ from urllib.parse import urljoin, quote
 from bs4 import BeautifulSoup
 import config
 
-# Patterns identiques à ebdz_scraper pour détecter les deux formats ed2k
+# Capture la structure complète ed2k : le nom de fichier peut contenir des
+# apostrophes, espaces, parenthèses… donc on s'arrête au séparateur de champ « | »
+# (et non sur des caractères du nom comme l'apostrophe — cause du bug de
+# non-détection sur les titres type « Académie … Alice (L') »).
 _ED2K_PATTERNS = [
-    r'ed2k://\|file\|[^"<>\s\']+',
-    r'https?://ed2k//?(?:\|file\|)[^"<>\s\']+',
+    r'ed2k://\|file\|[^|]+\|\d+\|[0-9A-Fa-f]{32}\|',
+    r'https?://ed2k//?\|file\|[^|]+\|\d+\|[0-9A-Fa-f]{32}\|',
 ]
 _ED2K_PREFIXES = [
     ("https://ed2k//", "ed2k://"),
@@ -36,9 +39,14 @@ def _normalize_ed2k(raw: str) -> str:
 def _collect_ed2k(raw: str, seen: set, links: list):
     """Nettoyage + normalisation + parse d'un candidat ed2k brut."""
     import ebdz_scraper
-    raw = raw.split('"')[0].split("'")[0].split("<")[0].split(">")[0].strip()
-    normalized = _normalize_ed2k(raw)
-    parsed = ebdz_scraper.parse_ed2k(normalized)
+    normalized = _normalize_ed2k(raw.strip())
+    # Isole la structure ed2k canonique. Le nom de fichier (1er champ) peut
+    # contenir apostrophes/espaces/parenthèses → on ne le coupe PAS, on borne
+    # par les séparateurs « | ». Tolère un éventuel délimiteur HTML résiduel.
+    m = re.search(r'ed2k://\|file\|[^|]+\|\d+\|[0-9A-Fa-f]{32}\|/?', normalized)
+    if not m:
+        return
+    parsed = ebdz_scraper.parse_ed2k(m.group(0))
     if parsed and parsed["filehash"] not in seen:
         seen.add(parsed["filehash"])
         links.append(parsed)
@@ -81,7 +89,7 @@ def extract_ed2k_from_page(url: str, mybbuser: str) -> dict:
                 for raw in re.findall(pat, val):
                     _collect_ed2k(raw, seen, links)
             # cas spécial : ed2k:// collé à d'autres caractères
-            for raw in re.findall(r'ed2k://[^\s"\'<>]+', val):
+            for raw in re.findall(r'ed2k://[^\s"<>]+', val):
                 _collect_ed2k(raw, seen, links)
 
     # ── Passe 2 : regex sur le texte brut ──
@@ -95,7 +103,7 @@ def extract_ed2k_from_page(url: str, mybbuser: str) -> dict:
         for raw in re.findall(pat, unescaped):
             _collect_ed2k(raw, seen, links)
     # ed2k:// libre dans le texte décodé
-    for raw in re.findall(r'ed2k://[^\s"\'<>]+', unescaped):
+    for raw in re.findall(r'ed2k://[^\s"<>]+', unescaped):
         _collect_ed2k(raw, seen, links)
 
     return {"ok": True, "links": links, "total": len(links)}
