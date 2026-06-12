@@ -27,6 +27,13 @@ _ED2K_PREFIXES = [
     ("http://ed2k/",   "ed2k://"),
 ]
 
+# Détecte un lien ed2k complet présent en TEXTE (nom de fichier tolérant : on
+# borne au séparateur de champ « | », donc apostrophes/espaces/parenthèses OK).
+_ED2K_TEXT_RE = re.compile(
+    r'(?:ed2k://|https?://ed2k//?)\|file\|[^|]+\|\d+\|[0-9A-Fa-f]{32}\|/?',
+    re.IGNORECASE,
+)
+
 
 def _normalize_ed2k(raw: str) -> str:
     """Normalise les variantes https://ed2k// → ed2k://"""
@@ -232,6 +239,34 @@ def fetch_and_rewrite(url: str, mybbuser: str) -> dict:
             )
         else:
             form["action"] = f"{PROXY_PATH}?url={quote(abs_action, safe=':/')}"
+
+    # ── Liens ed2k présents en TEXTE BRUT → ancres cliquables ──────────────
+    # Sur certaines pages, les liens ed2k ne sont pas des <a> mais du texte
+    # (ebdz les rend cliquables via son propre JS, que l'on supprime). On les
+    # transforme ici pour qu'un simple CLIC les ajoute (plus de drag & drop).
+    from bs4 import NavigableString
+    for text_node in list(soup.find_all(string=_ED2K_TEXT_RE)):
+        parent = text_node.parent
+        if parent is None or parent.name in ("a", "script", "style", "textarea"):
+            continue
+        s = str(text_node)
+        parts, last = [], 0
+        for m in _ED2K_TEXT_RE.finditer(s):
+            if m.start() > last:
+                parts.append(NavigableString(s[last:m.start()]))
+            ed2k_url = _normalize_ed2k(m.group(0))
+            link = soup.new_tag("a", href="#")
+            safe = ed2k_url.replace("\\", "\\\\").replace("'", "\\'")
+            link["onclick"] = f"parent.postMessage({{type:'ed2k',url:'{safe}'}}, '*'); return false;"
+            link["style"]   = "color:#f59e0b!important;font-weight:bold;cursor:pointer"
+            link["title"]   = "Ajouter à la queue MangaArr"
+            link.string     = ed2k_url
+            parts.append(link)
+            last = m.end()
+        if last < len(s):
+            parts.append(NavigableString(s[last:]))
+        if parts:
+            text_node.replace_with(*parts)
 
     # Injecte un script qui notifie le parent de l'URL courante et gère le scroll par ancre
     inject = soup.new_tag("script")
