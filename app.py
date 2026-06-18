@@ -2383,7 +2383,9 @@ def api_get_profiles():
         "tags": profiles.get_tags(),
         "must_contain": profiles.get_must_contain(),
         "must_not_contain": profiles.get_must_not_contain(),
-        "known_tags": config.KNOWN_TAGS,
+        "known_tags": config.get_known_tags(),          # liste complète (détection)
+        "known_tags_builtin": config.KNOWN_TAGS,         # codés en dur (non supprimables)
+        "known_tags_custom": config.get("known_tags_custom", []),  # ajoutés par l'utilisateur
     })
 
 @app.route("/api/profiles", methods=["POST"])
@@ -2415,6 +2417,35 @@ def api_update_tag_score(tag_name):
     for t in tags:
         if t["name"] == tag_name: t["score"] = score
     profiles.set_tags(tags); return jsonify({"ok": True})
+
+
+# ── Tags connus personnalisés (détection des groupes de release) ──
+
+@app.route("/api/profiles/known-tags", methods=["POST"])
+def api_add_known_tag():
+    """Ajoute un tag connu personnalisé (utilisé pour la détection des groupes)."""
+    d    = request.json or {}
+    name = (d.get("name") or "").strip()
+    if not name:
+        return jsonify({"ok": False, "message": "Nom requis"})
+    # Déjà couvert par un tag connu (builtin ou custom) ?
+    if any(name.lower() == t.lower() for t in config.get_known_tags()):
+        return jsonify({"ok": False, "message": "Tag déjà connu"})
+    cfg = config.load()
+    custom = cfg.get("known_tags_custom", []) or []
+    custom.append(name)
+    cfg["known_tags_custom"] = custom
+    config.save(cfg)
+    return jsonify({"ok": True})
+
+@app.route("/api/profiles/known-tags/<path:tag_name>", methods=["DELETE"])
+def api_delete_known_tag(tag_name):
+    """Supprime un tag connu personnalisé (les builtin ne sont pas supprimables)."""
+    cfg = config.load()
+    custom = cfg.get("known_tags_custom", []) or []
+    cfg["known_tags_custom"] = [t for t in custom if t.lower() != tag_name.lower()]
+    config.save(cfg)
+    return jsonify({"ok": True})
 
 
 # ════════════════════════════════════════════════════════

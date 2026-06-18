@@ -560,6 +560,40 @@ async function loadProfiles() {
   renderTagsList(d.tags || []);
   renderKeywords('must_contain',     d.must_contain || []);
   renderKeywords('must_not_contain', d.must_not_contain || []);
+  renderKnownTags(d.known_tags_builtin || [], d.known_tags_custom || []);
+}
+
+function renderKnownTags(builtin, custom) {
+  const el = document.getElementById('known-tags-list');
+  if (!el) return;
+  const builtinHtml = builtin.map(t =>
+    `<span class="kw-tag" title="Tag intégré (non supprimable)" style="opacity:.7">${esc(t)}</span>`
+  ).join('');
+  const customHtml = custom.map(t =>
+    `<span class="kw-tag must">${esc(t)}<button onclick="removeKnownTag('${esc(t)}')">✕</button></span>`
+  ).join('');
+  el.innerHTML = builtinHtml + customHtml;
+}
+
+async function addKnownTag() {
+  const input  = document.getElementById('known-tag-input');
+  const status = document.getElementById('known-tag-status');
+  const name   = input.value.trim();
+  if (!name) { status.textContent = 'Nom requis'; status.className = 'status-msg error'; return; }
+  const d = await api('/profiles/known-tags', 'POST', { name });
+  if (d.ok) {
+    status.textContent = `Tag "${name}" ajouté ✓`; status.className = 'status-msg ok';
+    input.value = '';
+    loadProfiles();
+  } else {
+    status.textContent = d.message; status.className = 'status-msg error';
+  }
+}
+
+async function removeKnownTag(name) {
+  if (!confirm(`Supprimer le tag connu "${name}" ?`)) return;
+  await api(`/profiles/known-tags/${encodeURIComponent(name)}`, 'DELETE');
+  loadProfiles();
 }
 
 function renderTagsList(tags) {
@@ -2865,7 +2899,8 @@ function openPendingActionModal(item) {
       </div>
 
       <div style="padding:12px 16px;border-bottom:1px solid var(--border);font-size:13px;color:var(--text-dim)">
-        Sélectionnez le(s) Tome(s) que vous souhaitez remplacer :
+        Cochez uniquement les Tome(s) existants que vous souhaitez <strong>remplacer</strong>.
+        Les nouveaux tomes manquants seront <strong>ajoutés dans tous les cas</strong>.
       </div>
 
       <div style="overflow-y:auto;flex:1">
@@ -2889,12 +2924,17 @@ function openPendingActionModal(item) {
       <div id="pending-action-error" style="display:none;padding:8px 20px;color:var(--danger);font-size:13px;font-weight:600"></div>
 
       <div style="padding:14px 20px;border-top:1px solid var(--border);display:flex;gap:10px;justify-content:flex-end">
-        <button onclick="_resolvePending(true)"
+        <button onclick="document.getElementById('pending-action-modal').remove()"
+                style="padding:9px 20px;border-radius:8px;border:1px solid var(--border);
+                       background:none;color:var(--text-dim);cursor:pointer;font-size:13px">
+          Annuler
+        </button>
+        <button onclick="_resolvePending('add')"
                 style="padding:9px 20px;border-radius:8px;border:1px solid var(--border);
                        background:none;color:var(--text);cursor:pointer;font-size:13px">
-          Ne pas remplacer
+          Ne pas remplacer (ajouter les nouveaux)
         </button>
-        <button onclick="_resolvePending(false)"
+        <button onclick="_resolvePending('validate')"
                 style="padding:9px 20px;border-radius:8px;border:none;background:var(--accent);
                        color:#fff;cursor:pointer;font-size:13px;font-weight:600">
           ✓ Valider
@@ -2906,23 +2946,18 @@ function openPendingActionModal(item) {
   document.body.appendChild(modal);
 }
 
-async function _resolvePending(skipAll) {
+async function _resolvePending(mode) {
   const item  = _pendingActionItem;
   if (!item) { alert('Erreur interne : item non trouvé.'); return; }
 
   const errEl = document.getElementById('pending-action-error');
   if (errEl) errEl.style.display = 'none';
 
+  // mode 'validate' → remplace les tomes cochés + ajoute les nouveaux
+  // mode 'add'      → ne remplace rien, ajoute seulement les tomes manquants
   let replace_tomes = [];
-  if (!skipAll) {
+  if (mode === 'validate') {
     replace_tomes = [...document.querySelectorAll('.conflict-chk:checked')].map(c => parseInt(c.value));
-    if (replace_tomes.length === 0) {
-      if (errEl) {
-        errEl.textContent = 'Sélectionnez le(s) Tome(s) à remplacer pour valider.';
-        errEl.style.display = '';
-      }
-      return;
-    }
   }
 
   const body = {
@@ -2931,14 +2966,16 @@ async function _resolvePending(skipAll) {
     series_name:   item.series_name  || '',
     filename:      item.filename     || '',
     replace_tomes,
-    skip_all:      skipAll,
+    skip_all:      false,
   };
 
   const res = await api('/queue/resolve-pending', 'POST', body);
   document.getElementById('pending-action-modal')?.remove();
 
   if (res.ok) {
-    showToast(skipAll ? 'Aucun remplacement effectué ✓' : `✓ ${res.message}`);
+    showToast(mode === 'add'
+      ? 'Nouveaux tomes ajoutés — aucun remplacement ✓'
+      : `✓ ${res.message}`);
     refreshQueue();
     loadTorrentQueue();
   } else {
@@ -3053,7 +3090,7 @@ async function _fbNavigate(path) {
     let cumul = '';
     parts.forEach((p, i) => {
       cumul += '/' + p;
-      const target = JSON.stringify(cumul);
+      const target = esc(JSON.stringify(cumul));
       html += i < parts.length - 1
         ? `<span style="cursor:pointer;color:var(--accent)" onclick="_fbNavigate(${target})">${esc(p)}</span><span style="color:var(--text-dim)">/</span>`
         : `<span style="color:var(--text)">${esc(p)}</span>`;
@@ -3072,7 +3109,7 @@ async function _fbNavigate(path) {
 
   // Option "sélectionner ce dossier" pour les packs/intégrales
   if (volType === 'pack' || volType === 'integrale') {
-    const p = JSON.stringify(d.path);
+    const p = esc(JSON.stringify(d.path));
     const dirName = d.path.split('/').filter(Boolean).pop() || '/';
     html += `<div onclick="_fbSelect(${p}, 'dir')"
                style="padding:8px 16px;cursor:pointer;display:flex;align-items:center;gap:10px;
@@ -3090,7 +3127,7 @@ async function _fbNavigate(path) {
     const sz      = !isDir && it.size > 0
       ? `<span style="font-size:11px;color:var(--text-dim);margin-left:auto">${(it.size/1024/1024).toFixed(1)} Mo</span>`
       : '';
-    const p = JSON.stringify(full);
+    const p = esc(JSON.stringify(full));
 
     if (isDir) {
       return `<div style="padding:8px 16px;display:flex;align-items:center;gap:10px;cursor:pointer"

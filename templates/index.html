@@ -599,6 +599,18 @@
         <button class="btn btn-primary" onclick="addKeyword('must_not_contain')">Ajouter</button>
       </div>
     </div>
+
+    <!-- Tags connus (détection des groupes de release) -->
+    <div class="settings-card">
+      <h2>Tags connus</h2>
+      <p class="hint">Groupes de release reconnus automatiquement dans les noms de fichiers. Les tags intégrés ne sont pas supprimables ; ajoutez vos propres tags pour qu'ils soient détectés.</p>
+      <div id="known-tags-list" class="keyword-tags"></div>
+      <div class="add-keyword-row">
+        <input type="text" id="known-tag-input" class="text-input" placeholder="Nom du tag (ex: MonGroupe)…" style="flex:1" onkeydown="if(event.key==='Enter')addKnownTag()">
+        <button class="btn btn-primary" onclick="addKnownTag()">Ajouter</button>
+      </div>
+      <div id="known-tag-status" class="status-msg" style="margin-top:8px"></div>
+    </div>
   </div>
 
   <!-- ══ METADATA ══ -->

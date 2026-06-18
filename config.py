@@ -25,6 +25,9 @@ DEFAULTS = {
         "must_contain":     [],
         "must_not_contain": [],
     },
+    # Tags connus ajoutés par l'utilisateur depuis les paramètres.
+    # Fusionnés avec KNOWN_TAGS (codés en dur) pour la détection.
+    "known_tags_custom": [],
     "metadata_sources": [],
     "scrape_interval_hours":    24,
     "meta_sync_interval_hours": 72,
@@ -59,6 +62,22 @@ KNOWN_TAGS = [
     "FireLion", "iBooker", "Dogbanov", "thor1295", "Ip Man", "CyberM", "Lisa",
     "Maxrapid", "XRA-Empire", "Cybermasa", "aATAa",
 ]
+
+def get_known_tags() -> list:
+    """
+    Liste complète des tags connus = KNOWN_TAGS (codés en dur)
+    + known_tags_custom (ajoutés par l'utilisateur), sans doublons.
+    """
+    custom = get("known_tags_custom", []) or []
+    merged = list(KNOWN_TAGS)
+    seen   = {t.lower() for t in merged}
+    for t in custom:
+        t = (t or "").strip()
+        if t and t.lower() not in seen:
+            merged.append(t)
+            seen.add(t.lower())
+    return merged
+
 
 def load() -> dict:
     if not os.path.exists(CONFIG_FILE):

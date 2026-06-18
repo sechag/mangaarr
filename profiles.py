@@ -54,8 +54,8 @@ def detect_tag(filename: str) -> str:
         if re.search(rf"(?<![a-z0-9]){re.escape(tag_norm)}(?![a-z0-9])", text):
             return _resolve_neo(tag, text)
 
-    # Fallback : teste KNOWN_TAGS (toujours, même si config vide)
-    for tag in config.KNOWN_TAGS:
+    # Fallback : teste les tags connus (KNOWN_TAGS + tags ajoutés par l'utilisateur)
+    for tag in config.get_known_tags():
         if tag in ("Notag", "Paprika+"):
             continue
         # Normalise le tag pour la comparaison
