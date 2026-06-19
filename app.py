@@ -21,6 +21,7 @@ import ebdz_scraper, mangadb_client, cache as cache_mod, queue_manager
 import library_manager as lib_mgr
 import torznab_client, qbittorrent_client, amule_client
 import discover_manager
+import discover_ed2k_manager
 import ebdz_browser
 import telegram_client
 
@@ -1109,6 +1110,11 @@ def page_discover():
     return render_template("discover.html")
 
 
+@app.route("/discover-ed2k")
+def page_discover_ed2k():
+    return render_template("discover_ed2k.html")
+
+
 @app.route("/ebdz")
 def page_ebdz_browser():
     return render_template("ebdz_browser.html", home_url=ebdz_browser.EBDZ_HOME)
@@ -1153,52 +1159,6 @@ def api_ebdz_extract_ed2k():
     return jsonify(result)
 
 
-@app.route("/api/ebdz-proxy/generate-collection", methods=["POST"])
-def api_ebdz_generate_collection():
-    """
-    Reçoit une liste de liens ed2k avec numéros de tome corrigés,
-    les ajoute à la queue et génère un .emulecollection pour la série.
-    """
-    d           = request.json or {}
-    series_name = d.get("series_name", "").strip()
-    items_in    = d.get("items", [])   # [{url, tome_number}]
-
-    if not series_name:
-        return jsonify({"ok": False, "message": "Nom de série requis"})
-    if not items_in:
-        return jsonify({"ok": False, "message": "Aucun lien fourni"})
-
-    items = []
-    for it in items_in:
-        parsed = ebdz_scraper.parse_ed2k(it.get("url", ""))
-        if not parsed:
-            continue
-        items.append({
-            "filename":     parsed["filename"],
-            "filesize":     parsed["filesize"],
-            "filehash":     parsed["filehash"],
-            "url":          parsed["url"],
-            "tome_number":  it.get("tome_number") or parsed.get("tome_number", ""),
-            "tag":          parsed.get("tag", ""),
-            "series_name":  series_name,
-            "series_exact": True,   # nom fourni explicitement → pas de fuzzy matching
-            "action":       "missing",
-        })
-
-    if not items:
-        return jsonify({"ok": False, "message": "Aucun lien ed2k valide"})
-
-    r  = queue_manager.add_to_queue(items)
-    series_label = re.sub(r"[^A-Za-z0-9_\-]", ".", series_name.replace(" ", "."))
-    fp = queue_manager.generate_emulecollection(items, series_prefix=series_label)
-    return jsonify({
-        "ok":      True,
-        "added":   r["added"],
-        "skipped": r["skipped"],
-        "file":    os.path.basename(fp) if fp else None,
-    })
-
-
 @app.route("/api/ebdz-proxy/add-ed2k", methods=["POST"])
 def api_ebdz_add_ed2k():
     """Ajoute un lien ed2k intercepté depuis le navigateur ebdz à la queue."""
@@ -1222,8 +1182,6 @@ def api_ebdz_add_ed2k():
         "action":       "missing",
     }
     r = queue_manager.add_to_queue([item])
-    if r["added"]:
-        queue_manager.generate_emulecollection(label="ebdz-browser")
     return jsonify({"ok": True, "added": r["added"], "skipped": r["skipped"],
                     "filename": parsed["filename"]})
 
@@ -1276,7 +1234,7 @@ def api_amule_add_links():
             "tag":          parsed.get("tag", ""),
             "series_name":  series_name,
             "series_exact": True,
-            "action":       "missing",
+            "action":       it.get("action", "missing"),
         })
 
     if not items:
@@ -1412,6 +1370,86 @@ def api_discover_download():
     Délègue à api_torrent_download en réutilisant sa logique.
     """
     return api_torrent_download()
+
+
+# ════════════════════════════════════════════════════════
+# DÉCOUVERTE ED2K (eMule/aMule)
+# ════════════════════════════════════════════════════════
+
+@app.route("/api/discover-ed2k/cache")
+def api_discover_ed2k_cache():
+    """Retourne les résultats ED2K mis en cache (< 24h) ou liste vide."""
+    series = discover_ed2k_manager.load_cache()
+    info   = discover_ed2k_manager.cache_info()
+    if series is None:
+        return jsonify({"ok": True, "cached": False, "series": [], "cache_info": info})
+    return jsonify({"ok": True, "cached": True, "series": series, "cache_info": info})
+
+
+@app.route("/api/discover-ed2k/cache", methods=["DELETE"])
+def api_discover_ed2k_cache_clear():
+    """Supprime le cache découverte ED2K."""
+    discover_ed2k_manager.clear_cache()
+    return jsonify({"ok": True})
+
+
+@app.route("/api/discover-ed2k/stream")
+def api_discover_ed2k_stream():
+    """
+    SSE : stream la découverte ED2K (ebdz) en temps réel.
+    ?lib_id=XXX&delay_ms=5000
+    Événements : start | progress | series | done | error
+    """
+    lib_id   = request.args.get("lib_id", "")
+    delay_ms = max(500, int(request.args.get("delay_ms", 5000)))
+
+    mybbuser = config.get("mybbuser", "")
+
+    def generate():
+        if not mybbuser:
+            yield f"data: {json.dumps({'type': 'error', 'message': 'Cookie ebdz non configuré (Settings > Indexers)'})}\n\n"
+            return
+
+        session = ebdz_scraper.make_session(mybbuser)
+        if not ebdz_scraper.check_login(session):
+            yield f"data: {json.dumps({'type': 'error', 'message': 'Cookie ebdz invalide ou expiré'})}\n\n"
+            return
+
+        series_list = discover_ed2k_manager.get_candidate_series(lib_id)
+        total       = len(series_list)
+
+        if total == 0:
+            yield f"data: {json.dumps({'type': 'error', 'message': 'Aucune série trouvée sur le disque. Vérifie tes librairies (Settings > Librairies).'})}\n\n"
+            return
+
+        yield f"data: {json.dumps({'type': 'start', 'total': total})}\n\n"
+
+        found_series = []
+        for i, s in enumerate(series_list):
+            if i > 0:
+                time.sleep(delay_ms / 1000)
+
+            yield f"data: {json.dumps({'type': 'progress', 'current': i + 1, 'total': total, 'series_name': s['series_name']})}\n\n"
+
+            try:
+                result = discover_ed2k_manager.enrich_with_ed2k(session, s)
+            except Exception as e:
+                yield f"data: {json.dumps({'type': 'progress', 'current': i + 1, 'total': total, 'series_name': s['series_name'], 'error': str(e)})}\n\n"
+                continue
+
+            if result:
+                found_series.append(result)
+                yield f"data: {json.dumps({'type': 'series', 'series': result})}\n\n"
+
+        discover_ed2k_manager.save_cache(found_series)
+
+        yield f"data: {json.dumps({'type': 'done', 'total_found': len(found_series), 'total_scanned': total})}\n\n"
+
+    return Response(
+        generate(),
+        mimetype="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
 
 
 # ════════════════════════════════════════════════════════
@@ -1565,7 +1603,7 @@ def api_series_search_ebdz(series_slug):
 
 @app.route("/api/collection/series/<path:series_slug>/add-to-queue", methods=["POST"])
 def api_series_add_to_queue(series_slug):
-    """Ajoute des liens ed2k sélectionnés à la queue + génère emulecollection."""
+    """Ajoute des liens ed2k sélectionnés à la queue."""
     info  = lib_mgr.resolve_slug(series_slug)
     d     = request.json or {}
     items = d.get("items", [])   # [{filename, filesize, filehash, url, tome_number, tag}]
@@ -1582,12 +1620,10 @@ def api_series_add_to_queue(series_slug):
     r     = queue_manager.add_to_queue(items)
     added   = r["added"]
     skipped = r["skipped"]
-    fp    = queue_manager.generate_emulecollection(label="manual")
-    links = sum(1 for line in open(fp) if line.startswith("ed2k://"))
     msg = f"{added} ajouté(s)"
     if skipped:
         msg += f", {skipped} doublon(s) ignoré(s)"
-    return jsonify({"ok": True, "added": added, "skipped": skipped, "collection_file": os.path.basename(fp), "links": links, "message": msg})
+    return jsonify({"ok": True, "added": added, "skipped": skipped, "message": msg})
 
 
 @app.route("/api/collection/series/<path:series_slug>/detect", methods=["POST"])
@@ -1808,7 +1844,7 @@ def api_search_tomes(series_slug):
 def api_add_tomes_to_queue(series_slug):
     """
     Ajoute des tomes sélectionnés à la queue.
-    delivery : "emulecollection" (défaut) | "amule" | "queue_only"
+    delivery : "amule" (défaut) | "queue_only"
     """
     series_info = lib_mgr.resolve_slug(series_slug)
     if not series_info:
@@ -1816,7 +1852,7 @@ def api_add_tomes_to_queue(series_slug):
 
     d          = request.json or {}
     tomes_data = d.get("tomes", [])
-    delivery   = d.get("delivery", "emulecollection")
+    delivery   = d.get("delivery", "amule")
     if not tomes_data:
         return jsonify({"ok": False, "message": "Aucun tome fourni"})
 
@@ -1845,8 +1881,6 @@ def api_add_tomes_to_queue(series_slug):
     if skipped:
         msg += f", {skipped} doublon(s) ignoré(s)"
 
-    series_label = re.sub(r"[^A-Za-z0-9_\-]", ".", series_info["name"].replace(" ", "."))
-
     if delivery == "amule":
         amule_cl = _get_amule_client()
         if not amule_cl:
@@ -1858,13 +1892,7 @@ def api_add_tomes_to_queue(series_slug):
         return jsonify({"ok": True, "added": added, "skipped": skipped,
                         "delivery": "amule", "message": msg})
 
-    elif delivery == "emulecollection":
-        fp = queue_manager.generate_emulecollection(items, series_prefix=series_label)
-        return jsonify({"ok": True, "added": added, "skipped": skipped,
-                        "file": os.path.basename(fp) if fp else None,
-                        "download": True, "delivery": "emulecollection", "message": msg})
-
-    # queue_only : juste ajouter à la queue, pas de fichier ni d'envoi
+    # queue_only : juste ajouter à la queue, pas d'envoi
     return jsonify({"ok": True, "added": added, "skipped": skipped,
                     "delivery": "queue_only", "message": msg})
 
@@ -2739,68 +2767,6 @@ def api_series_on_disk():
         })
     return jsonify({"ok": True, "libraries": result})
 
-@app.route("/api/queue/detect-missing", methods=["POST"])
-def api_detect_missing():
-    """
-    Détecte les tomes manquants en analysant le dossier de destination sur disque.
-    Ne dépend plus de Komga — lit directement les sous-dossiers de download_dir.
-    """
-    if _task["running"]:
-        return jsonify({"ok": False, "message": "Tâche déjà en cours"})
-
-    d          = request.json or {}
-    lib_id     = d.get("lib_id")       # None = toutes les librairies
-    serie_name = d.get("serie_name")   # None = toutes les séries de la lib
-    mode       = d.get("mode")         # None = tout, "missing" ou "upgrade"
-
-    libraries = lib_mgr.get_libraries()
-    if not libraries:
-        return jsonify({"ok": False,
-                        "message": "Aucune librairie configurée (Settings > Librairies)"})
-
-    # Filtre sur une librairie spécifique si demandé
-    if lib_id:
-        libraries = [l for l in libraries if l["id"] == lib_id]
-        if not libraries:
-            return jsonify({"ok": False, "message": f"Librairie '{lib_id}' introuvable"})
-
-    def _run():
-        try:
-            import folder_scanner
-            def _progress(label):
-                _set_task(running=True, label=label, kind="other")
-
-            total_added = 0
-            all_details = []
-
-            for lib in libraries:
-                lib_path = lib["path"]
-                lib_name = lib["name"]
-
-                if not os.path.isdir(lib_path):
-                    app.logger.warning(f"[DetectMissing] Librairie '{lib_name}' introuvable : {lib_path}")
-                    continue
-
-                _set_task(running=True, label=f"Analyse librairie '{lib_name}'…", kind="other")
-                result = folder_scanner.detect_missing_from_disk(
-                    lib_path,
-                    progress_cb=_progress,
-                    serie_filter=serie_name,
-                    mode=mode,
-                )
-                total_added += result.get("added", 0)
-                all_details.extend(result.get("details", []))
-
-            _set_task(running=False,
-                      label=f"Terminé — {total_added} tome(s) manquant(s) détecté(s)",
-                      results=all_details)
-        except Exception as e:
-            app.logger.error(f"[DetectMissing] {e}")
-            _set_task(running=False, label=f"Erreur : {str(e)[:80]}")
-
-    threading.Thread(target=_run, daemon=True).start()
-    return jsonify({"ok": True})
-
 @app.route("/api/queue/apply-filters", methods=["POST"])
 def api_queue_apply_filters():
     """
@@ -2829,98 +2795,6 @@ def api_queue_apply_filters():
 
     return jsonify({"ok": True, "removed": removed,
                     "message": f"{removed} item(s) retiré(s) de la queue"})
-
-@app.route("/api/queue/generate-collection", methods=["POST"])
-def api_generate_collection():
-    """Génère un .emulecollection avec tous les items pending de la queue."""
-    fp    = queue_manager.generate_emulecollection(label="manual")
-    links = sum(1 for line in open(fp) if line.startswith("ed2k://"))
-    if links == 0:
-        return jsonify({"ok": False, "message": "Aucun item en attente dans la queue"})
-    return jsonify({
-        "ok":       True,
-        "filename": os.path.basename(fp),
-        "links":    links,
-    })
-
-
-@app.route("/api/queue/collections/download/<collection_type>")
-def api_download_collection_zip(collection_type):
-    """
-    Télécharge un ZIP contenant toutes les parties .emulecollection
-    d'un type donné : "ADD", "UPGRADE", ou "all".
-    """
-    import zipfile, io
-    if collection_type not in ("ADD", "UPGRADE", "all"):
-        return jsonify({"error": "Type invalide"}), 400
-
-    emule_dir = queue_manager.EMULE_DIR
-    if not os.path.isdir(emule_dir):
-        return jsonify({"error": "Dossier emulecollections introuvable"}), 404
-
-    files = []
-    for fn in sorted(os.listdir(emule_dir)):
-        if not fn.endswith(".emulecollection"):
-            continue
-        if collection_type == "all":
-            files.append(fn)
-        elif collection_type.upper() in fn.upper():
-            files.append(fn)
-
-    if not files:
-        return jsonify({"error": f"Aucun fichier {collection_type} trouvé"}), 404
-
-    if len(files) == 1:
-        # Un seul fichier → téléchargement direct
-        from flask import send_file
-        return send_file(
-            os.path.join(emule_dir, files[0]),
-            as_attachment=True,
-            download_name=files[0]
-        )
-
-    # Plusieurs fichiers → ZIP
-    buf = io.BytesIO()
-    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
-        for fn in files:
-            zf.write(os.path.join(emule_dir, fn), fn)
-    buf.seek(0)
-    from flask import send_file
-    return send_file(
-        buf,
-        mimetype="application/zip",
-        as_attachment=True,
-        download_name=f"mangaarr_{collection_type}_{__import__('datetime').datetime.now().strftime('%Y%m%d')}.zip"
-    )
-
-@app.route("/api/queue/collections")
-def api_list_collections():
-    return jsonify({"files": queue_manager.list_emulecollections()})
-
-@app.route("/api/queue/collections/<filename>")
-def api_download_collection(filename):
-    import re as _re
-    if not _re.match(r'^[\w\.\-]+\.emulecollection$', filename):
-        return jsonify({"error": "Nom invalide"}), 400
-    fp = os.path.join(queue_manager.EMULE_DIR, filename)
-    if not os.path.isfile(fp):
-        return jsonify({"error": "Fichier introuvable"}), 404
-    from flask import send_file
-    return send_file(fp, as_attachment=True)
-
-@app.route("/api/queue/collections/<filename>", methods=["DELETE"])
-def api_delete_collection(filename):
-    import re as _re
-    if not _re.match(r'^[\w\.\-]+\.emulecollection$', filename):
-        return jsonify({"ok": False, "message": "Nom invalide"}), 400
-    fp = os.path.join(queue_manager.EMULE_DIR, filename)
-    if not os.path.isfile(fp):
-        return jsonify({"ok": False, "message": "Fichier introuvable"}), 404
-    try:
-        os.remove(fp)
-        return jsonify({"ok": True})
-    except Exception as e:
-        return jsonify({"ok": False, "message": str(e)}), 500
 
 @app.route("/api/queue/status/<filehash>", methods=["PATCH"])
 def api_update_queue_status(filehash):
@@ -2974,7 +2848,6 @@ def api_delete_queue_items():
     """
     Supprime des items de la queue eMule par leurs filehashes.
     Body : { filehashes: ["hash1", "hash2", ...] }
-    Met aussi à jour les .emulecollection / .txt existants.
     Si un client aMule est configuré, annule aussi dans aMule.
     """
     d          = request.json or {}
@@ -3682,15 +3555,6 @@ def _apply_env_config():
         os.makedirs(v, exist_ok=True)
         changed = True
 
-    # MANGAARR_EMULE : dossier .emulecollection
-    v = os.environ.get("MANGAARR_EMULE", "")
-    if v:
-        cfg["_emule_dir"] = v
-        import queue_manager as _qm
-        _qm.EMULE_DIR = v
-        os.makedirs(v, exist_ok=True)
-        changed = True
-
     if changed:
         config.save(cfg)
 
@@ -3698,7 +3562,6 @@ def _apply_env_config():
     print(f"  incoming_dir  : {cfg.get('emule_incoming_dir','(non configuré)')}")
     print(f"  download_dir  : {cfg.get('download_dir','(non configuré)')}")
     print(f"  cache_dir     : {cfg.get('_cache_dir','./cache')}")
-    print(f"  emule_dir     : {cfg.get('_emule_dir','./emulecollections')}")
 
 
 if __name__ == "__main__":

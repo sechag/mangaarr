@@ -43,6 +43,10 @@
       <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z" clip-rule="evenodd"/></svg>
       Découverte Torrent
     </a>
+    <a class="nav-item" href="/discover-ed2k" style="color:var(--accent)">
+      <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M12.586 4.586a2 2 0 112.828 2.828l-3 3a2 2 0 01-2.828 0 1 1 0 00-1.414 1.414 4 4 0 005.656 0l3-3a4 4 0 00-5.656-5.656l-1.5 1.5a1 1 0 101.414 1.414l1.5-1.5zm-5 5a2 2 0 012.828 0 1 1 0 001.414-1.414 4 4 0 00-5.656 0l-3 3a4 4 0 105.656 5.656l1.5-1.5a1 1 0 10-1.414-1.414l-1.5 1.5a2 2 0 11-2.828-2.828l3-3z" clip-rule="evenodd"/></svg>
+      Découverte ED2K
+    </a>
     <a class="nav-item" href="/ebdz">
       <svg viewBox="0 0 20 20" fill="currentColor"><path d="M10 12a2 2 0 100-4 2 2 0 000 4z"/><path fill-rule="evenodd" d="M.458 10C1.732 5.943 5.522 3 10 3s8.268 2.943 9.542 7c-1.274 4.057-5.064 7-9.542 7S1.732 14.057.458 10zM14 10a4 4 0 11-8 0 4 4 0 018 0z" clip-rule="evenodd"/></svg>
       eBDZ
@@ -486,10 +490,6 @@
         <div><strong>Forcer l'organisation manuelle (Torrent)</strong><p>Affiche un bouton ▶ dans la queue Torrent pour forcer la copie/renommage en sélectionnant le fichier téléchargé. Désactivé par défaut.</p></div>
         <label class="toggle"><input type="checkbox" id="toggle-force-organize"><span class="toggle-slider"></span></label>
       </div>
-      <div class="toggle-row">
-        <div><strong>Fichiers de collection en .txt</strong><p>Génère des fichiers <code>.txt</code> au lieu de <code>.emulecollection</code>. Même comportement : les liens supprimés de la queue sont retirés du fichier.</p></div>
-        <label class="toggle"><input type="checkbox" id="toggle-emule-txt"><span class="toggle-slider"></span></label>
-      </div>
     </div>
     <div class="settings-card">
       <h2>Format de renommage</h2>
@@ -709,21 +709,10 @@
       <div class="search-bar-wrap">
         <div class="collection-controls" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
           <input type="text" id="queue-search" class="search-input" placeholder="Filtrer par série…" oninput="filterQueueTable()">
-          <select id="queue-series-select" class="select-input" style="min-width:200px;max-width:320px" title="Sélectionner une série ou toutes">
-            <option value="">Toutes les séries</option>
-          </select>
-          <button class="btn btn-primary" onclick="detectMissing('missing')">
+          <a href="/discover-ed2k" class="btn btn-primary" style="display:inline-flex;align-items:center;gap:6px;text-decoration:none">
             <svg viewBox="0 0 20 20" fill="currentColor" style="width:14px;height:14px"><path fill-rule="evenodd" d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z" clip-rule="evenodd"/></svg>
-            Détecter manquants
-          </button>
-          <button class="btn btn-secondary" onclick="detectMissing('upgrade')">
-            <svg viewBox="0 0 20 20" fill="currentColor" style="width:14px;height:14px"><path fill-rule="evenodd" d="M3 3a1 1 0 000 2h11a1 1 0 100-2H3zm0 4a1 1 0 000 2h7a1 1 0 100-2H3zm0 4a1 1 0 100 2h4a1 1 0 100-2H3zm10-3a1 1 0 10-2 0v4.586l-1.293-1.293a1 1 0 10-1.414 1.414l3 3a1 1 0 001.414 0l3-3a1 1 0 00-1.414-1.414L13 12.586V8z" clip-rule="evenodd"/></svg>
-            Détecter upgrades
-          </button>
-          <button class="btn btn-secondary" onclick="generateCollection()">
-            <svg viewBox="0 0 20 20" fill="currentColor" style="width:14px;height:14px"><path fill-rule="evenodd" d="M3 17a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zM6.293 6.707a1 1 0 010-1.414l3-3a1 1 0 011.414 0l3 3a1 1 0 01-1.414 1.414L11 5.414V13a1 1 0 11-2 0V5.414L7.707 6.707a1 1 0 01-1.414 0z" clip-rule="evenodd"/></svg>
-            .emulecollection
-          </button>
+            Découverte ED2K
+          </a>
           <button class="btn btn-secondary btn-sm" onclick="applyQueueFilters()">Appliquer filtres</button>
           <button class="btn btn-danger btn-sm" onclick="clearQueue('done')">Purger terminés</button>
           <button class="btn btn-danger btn-sm" id="btn-delete-emule" style="display:none" onclick="deleteSelectedEmule()">
@@ -787,11 +776,7 @@
 
       <div id="queue-empty" class="empty-state" style="display:none">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
-        <p>Aucun téléchargement en queue.<br>Cliquez sur "Détecter manquants" pour lancer une analyse.</p>
-      </div>
-      <div class="settings-card" style="margin-top:20px">
-        <h2>Fichiers .emulecollection générés</h2>
-        <div id="collections-list"></div>
+        <p>Aucun téléchargement en queue.<br>Ouvrez la <a href="/discover-ed2k" style="color:var(--accent)">Découverte ED2K</a> pour détecter les tomes manquants et upgrades.</p>
       </div>
     </div>
 

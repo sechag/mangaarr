@@ -6,8 +6,7 @@
     "auto_rename": true,
     "auto_convert_cbr": true,
     "auto_convert_pdf": true,
-    "auto_replace": true,
-    "emulecollection_as_txt": false
+    "auto_replace": true
   },
   "profiles": {
     "tags": [],

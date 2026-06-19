@@ -599,10 +599,6 @@ document.getElementById('modal-mangadb').addEventListener('click', e => {
               style="background:#1a6b3c;justify-content:center">
         Envoyer à aMule
       </button>
-      <button onclick="confirmDelivery('emulecollection')" class="btn btn-primary"
-              style="justify-content:center">
-        Générer .emulecollection
-      </button>
     </div>
     <div id="modal-delivery-status" class="status-msg" style="margin-top:12px;text-align:center"></div>
   </div>
@@ -742,15 +738,18 @@ async function addSelectedTomes() {
   const amuleCheck = await fetch('/api/amule/available').then(r => r.json()).catch(() => ({available: false}));
 
   if (amuleCheck.available) {
-    // Affiche la modale de choix
+    // Affiche la modale de confirmation d'envoi à aMule
     const count = _pendingTomes.length;
     document.getElementById('modal-delivery-info').textContent =
-      `${count} tome${count > 1 ? 's' : ''} sélectionné${count > 1 ? 's' : ''} — comment voulez-vous les envoyer ?`;
+      `${count} tome${count > 1 ? 's' : ''} sélectionné${count > 1 ? 's' : ''} — envoyer à aMule ?`;
     document.getElementById('modal-delivery-status').textContent = '';
     document.getElementById('modal-delivery').style.display = 'flex';
   } else {
-    // Pas d'aMule : comportement classique
-    await _doAddTomes('emulecollection');
+    // Pas d'aMule : on ajoute seulement à la queue + message
+    const status = document.getElementById('tome-search-status');
+    status.textContent = 'Aucun client aMule configuré (Settings > Clients de téléchargement). Tomes ajoutés à la queue.';
+    status.style.color = 'var(--warning)';
+    await _doAddTomes('queue_only');
   }
 }
 
@@ -758,7 +757,7 @@ async function confirmDelivery(delivery) {
   const statusEl = document.getElementById('modal-delivery-status');
   const btns = document.querySelectorAll('#modal-delivery button.btn');
   btns.forEach(b => b.disabled = true);
-  statusEl.textContent = delivery === 'amule' ? 'Envoi à aMule…' : 'Génération…';
+  statusEl.textContent = 'Envoi à aMule…';
   statusEl.style.color = 'var(--text-dim)';
 
   await _doAddTomes(delivery);
@@ -780,14 +779,6 @@ async function _doAddTomes(delivery) {
   status.style.color = d.ok ? 'var(--success)' : 'var(--danger)';
   if (d.ok) {
     _selectedTomes.clear();
-    if (d.file && d.download) {
-      const a = document.createElement('a');
-      a.href     = `/api/queue/collections/${encodeURIComponent(d.file)}`;
-      a.download = d.file;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-    }
     setTimeout(() => searchTomesOnEbdz(), 1000);
   }
 }

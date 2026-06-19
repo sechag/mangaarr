@@ -519,9 +519,6 @@
         padding:7px 10px; font-size:12px; cursor:pointer; width:100%; margin-bottom:5px;">
         Envois Amule
       </button>
-      <button id="btn-generate" onclick="generateCollection()" disabled>
-        Générer .emulecollection
-      </button>
       <button id="btn-clear-links" onclick="clearLinks()">Vider la liste</button>
     </div>
 
@@ -958,7 +955,6 @@
 
   function updateFooter() {
     const info        = document.getElementById('sb-footer-info');
-    const btnGen      = document.getElementById('btn-generate');
     const btnAmule    = document.getElementById('btn-send-amule');
     const count       = _ed2kLinks.length;
     const hasSeries   = !!_activeSeries;
@@ -971,9 +967,7 @@
     } else {
       info.textContent = '';
     }
-    const canAct = hasSeries && count > 0;
-    btnGen.disabled   = !canAct;
-    btnAmule.disabled = !canAct;
+    btnAmule.disabled = !(hasSeries && count > 0);
   }
 
   // ── Collage manuel ──
@@ -1008,53 +1002,6 @@
     } else {
       showToast('Aucun lien ed2k valide trouvé', 'warn');
     }
-  }
-
-  // ════════════════════════════════
-  // Generate .emulecollection
-  // ════════════════════════════════
-  async function generateCollection() {
-    if (!_activeSeries || _ed2kLinks.length === 0) return;
-    const btn = document.getElementById('btn-generate');
-    btn.disabled = true;
-    navStatus.textContent = 'Génération…';
-
-    const items = _ed2kLinks.map(l => ({
-      url: l.url,
-      tome_number: l.tome_number,
-    }));
-
-    try {
-      const r = await fetch('/api/ebdz-proxy/generate-collection', {
-        method: 'POST',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({ series_name: _activeSeries, items }),
-      }).then(r => r.json());
-
-      if (r.ok) {
-        showToast(`✓ Fichier : ${r.file || 'généré'} — ${r.added||0} ajoutés`, 'ok');
-        navStatus.textContent = '✓ Collection générée';
-        // offer download
-        if (r.file) {
-          const a = document.createElement('a');
-          a.href = `/api/queue/collections/${encodeURIComponent(r.file)}`;
-          a.download = r.file;
-          a.click();
-        }
-        // clear list after success
-        _ed2kLinks = [];
-        renderLinks();
-      } else {
-        showToast(`✗ ${r.message || 'Erreur'}`, 'err');
-        navStatus.textContent = '✗ Erreur';
-      }
-    } catch(err) {
-      showToast('Erreur réseau', 'err');
-    }
-
-    btn.disabled = false;
-    setTimeout(() => { navStatus.textContent = ''; }, 3000);
-    updateFooter();
   }
 
   // ════════════════════════════════

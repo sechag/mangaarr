@@ -26,7 +26,6 @@ services:
       # Adapte la GAUCHE vers un dossier serveur dédié (ex. Unraid : /mnt/user/appdata/mangaarr).
       - /mnt/user/appdata/mangaarr/config:/data/config
       - /mnt/user/appdata/mangaarr/cache:/data/cache
-      - /mnt/user/appdata/mangaarr/emulecollections:/data/emulecollections
 
       # ── TES dossiers : remplace UNIQUEMENT la partie de gauche ──
       #

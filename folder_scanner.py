@@ -216,15 +216,9 @@ def detect_missing_from_disk(root_dir: str, progress_cb=None, serie_filter: str 
     total_added = queue_manager.add_to_queue(all_new_items)
     config.add_log(f"[Scan] {total_added} tome(s) ajouté(s) à la queue sur {total} séries", "info")
 
-    # Génère le .emulecollection avec TOUS les items pending de la queue
-    # (pas seulement les nouveaux — les doublons sont filtrés par add_to_queue
-    #  donc all_new_items peut être vide même si des items sont en attente)
-    collection_file = queue_manager.generate_emulecollection(label="missing")
-
     return {
         "ok":              True,
         "added":           len(all_new_items),
-        "collection_file": os.path.basename(collection_file) if collection_file else None,
         "details":         details,
         "total_series":    total,
     }

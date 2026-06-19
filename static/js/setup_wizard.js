@@ -938,7 +938,7 @@
     const get = id => $('#' + id, root);
     if (!get('au-rename')) return;  // pas sur la page automatisation
     const fmtEl = $('input[name="au-fmt"]:checked', root);
-    // Fusion avec la config existante pour préserver les clés hors-scope (ex. emulecollection_as_txt)
+    // Fusion avec la config existante pour préserver les clés hors-scope
     let mm = {};
     try { const cfg = await sapi('/config'); mm = (cfg && cfg.media_management) || {}; } catch (_) {}
     Object.assign(mm, {

@@ -378,7 +378,6 @@ async function saveMediaSettings() {
     auto_replace:             document.getElementById('toggle-replace').checked,
     force_organize_enabled:   forceOrg,
     rename_format:            fmtEl ? parseInt(fmtEl.value) : 1,
-    emulecollection_as_txt:   document.getElementById('toggle-emule-txt').checked,
   };
   _forceOrganizeEnabled = forceOrg;
   await api('/config', 'POST', { media_management: mm });
@@ -404,8 +403,6 @@ async function loadMediaSettings() {
   document.getElementById('toggle-replace').checked        = mm.auto_replace           ?? true;
   document.getElementById('toggle-force-organize').checked = mm.force_organize_enabled ?? false;
   _forceOrganizeEnabled = mm.force_organize_enabled ?? false;
-  const txtEl = document.getElementById('toggle-emule-txt');
-  if (txtEl) txtEl.checked = mm.emulecollection_as_txt ?? false;
   const fmt   = String(mm.rename_format ?? 1);
   const fmtEl = document.querySelector(`input[name="rename-format"][value="${fmt}"]`);
   if (fmtEl) fmtEl.checked = true;
@@ -1053,7 +1050,6 @@ async function loadQueue() {
   switchQueueTab(_queueActiveTab || 'emule');
   await _loadQueueLibrarySelect();
   await refreshQueue();
-  await loadCollections();
   updateQueueBadge();
   startIncomingPoll();
   scanIncoming();
@@ -1069,7 +1065,6 @@ async function applyQueueFilters() {
 }
 
 async function _loadQueueLibrarySelect() {
-  const sel    = document.getElementById('queue-series-select');
   const libSel = document.getElementById('queue-lib-filter');
   const lbl    = document.getElementById('queue-dest-label');
 
@@ -1083,7 +1078,6 @@ async function _loadQueueLibrarySelect() {
       lbl.textContent = '⚠ Aucune librairie configurée (Settings > Librairies)';
       lbl.style.color = 'var(--danger)';
     }
-    if (sel) sel.innerHTML = '<option value="">Aucune librairie</option>';
     return;
   }
 
@@ -1106,20 +1100,6 @@ async function _loadQueueLibrarySelect() {
     libSel.innerHTML = libHtml;
     libSel.value = _queueLibFilter; // restaure la sélection précédente si applicable
   }
-
-  if (!sel) return;
-
-  // Groupe par librairie pour le sélecteur "Détecter manquants"
-  let html = '<option value="|">Toutes les librairies</option>';
-  for (const lib of d.libraries) {
-    html += `<optgroup label="📚 ${esc(lib.name)}">`;
-    html += `<option value="${esc(lib.id)}|">— Toute la librairie —</option>`;
-    for (const serie of lib.series) {
-      html += `<option value="${esc(lib.id)}|${esc(serie)}">${esc(serie)}</option>`;
-    }
-    html += '</optgroup>';
-  }
-  sel.innerHTML = html;
 }
 
 function onQueueLibFilterChange() {
@@ -1396,7 +1376,6 @@ async function deleteSelectedUpgrade() {
   const btn = document.getElementById('btn-delete-upgrade');
   if (btn) btn.style.display = 'none';
   await refreshQueue();
-  await loadCollections();
   showToast(`${filehashes.length} item(s) supprimé(s) ✓`);
 }
 
@@ -1410,7 +1389,6 @@ async function deleteSelectedEmule() {
   const btn = document.getElementById('btn-delete-emule');
   if (btn) btn.style.display = 'none';
   await refreshQueue();
-  await loadCollections();  // Met à jour le nombre de liens dans les .emulecollection
   showToast(`${filehashes.length} item(s) supprimé(s) ✓`);
 }
 
@@ -1447,112 +1425,6 @@ async function updateQueueBadge() {
   }
 }
 
-
-async function detectMissing(mode) {
-  const sel = document.getElementById('queue-series-select');
-  const val = sel ? sel.value : '|';  // format: "lib_id|serie_name" ou "lib_id|" ou "|"
-
-  const [lib_id, serie_name] = (val || '|').split('|');
-
-  const d = await api('/queue/detect-missing', 'POST', {
-    lib_id:     lib_id     || null,
-    serie_name: serie_name || null,
-    mode:       mode       || null,
-  });
-
-  if (!d.ok) {
-    showToast(d.message || 'Erreur');
-    return;
-  }
-
-  const lbl = document.getElementById('queue-dest-label');
-  const modeLabel = mode === 'upgrade' ? 'upgrades' : 'manquants';
-  const label0 = serie_name ? `Analyse de "${serie_name}" (${modeLabel})…`
-               : lib_id ? `Analyse de la librairie (${modeLabel})…`
-               : `Analyse de toutes les librairies (${modeLabel})…`;
-  if (lbl) { lbl.textContent = label0; lbl.style.color = 'var(--accent)'; }
-
-  // Poll progression
-  const poll = setInterval(async () => {
-    const s = await api('/media/status');
-    if (lbl) lbl.textContent = s.label || '…';
-    if (!s.running) {
-      clearInterval(poll);
-      showToast(s.label || 'Détection terminée ✓');
-      if (lbl) {
-        lbl.style.color = 'var(--text-dim)';
-        const cfg = await api('/config');
-        lbl.textContent = cfg.download_dir ? `📁 ${cfg.download_dir}` : '';
-      }
-      refreshQueue();
-      loadCollections();
-      updateQueueBadge();
-    }
-  }, 1500);
-}
-
-async function generateCollection() {
-  const d = await api('/queue/generate-collection', 'POST', {});
-  if (d.ok) {
-    showToast(`Collection générée : ${d.filename || ''} (${d.links || 0} lien(s))`);
-    loadCollections();
-  } else {
-    showToast(d.message || 'Erreur génération', 'error');
-  }
-}
-
-async function loadCollections() {
-  const d = await api('/queue/collections');
-  const files = d.files || [];
-  const el = document.getElementById('collections-list');
-  if (!el) return;
-  if (!files.length) {
-    el.innerHTML = '<p style="color:var(--text-dim);font-size:12px">Aucun fichier généré.</p>';
-    return;
-  }
-
-  // Groupe par type (ADD / UPGRADE / autre)
-  const addFiles     = files.filter(f => f.filename.includes('_ADD'));
-  const upgradeFiles = files.filter(f => f.filename.includes('_UPGRADE'));
-  const otherFiles   = files.filter(f => !f.filename.includes('_ADD') && !f.filename.includes('_UPGRADE'));
-
-  const renderGroup = (label, groupFiles, type) => {
-    if (!groupFiles.length) return '';
-    const total = groupFiles.reduce((s, f) => s + (f.links || 0), 0);
-    return `<div style="margin-bottom:14px">
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
-        <strong style="font-size:13px">${label} <span style="color:var(--text-dim);font-weight:400">(${total} liens)</span></strong>
-        ${groupFiles.length > 1
-          ? `<a href="/api/queue/collections/download/${type}" class="btn btn-sm btn-secondary">↓ ZIP tout</a>`
-          : `<a href="/api/queue/collections/${esc(groupFiles[0].filename)}" class="btn btn-sm btn-secondary" download>↓ Télécharger</a>`
-        }
-      </div>
-      ${groupFiles.map(f => `
-        <div class="collection-item" style="padding:6px 0">
-          <span class="collection-name" style="font-size:12px">${esc(f.filename)}</span>
-          <span class="collection-meta">${f.links} liens · ${f.size_kb} Ko · ${esc(f.created)}</span>
-          <a href="/api/queue/collections/${esc(f.filename)}" class="btn btn-sm btn-secondary" download style="padding:3px 8px;font-size:11px">↓</a>
-          <button class="btn btn-sm btn-danger" style="padding:3px 8px;font-size:11px" onclick="deleteCollection('${esc(f.filename)}')" title="Supprimer">✕</button>
-        </div>`).join('')}
-    </div>`;
-  };
-
-  el.innerHTML =
-    renderGroup('📥 Téléchargements (ADD)',     addFiles,     'ADD')     +
-    renderGroup('⬆ Upgrades (UPGRADE)',         upgradeFiles, 'UPGRADE') +
-    renderGroup('📋 Autres',                    otherFiles,   'all');
-}
-
-async function deleteCollection(filename) {
-  if (!confirm(`Supprimer le fichier "${filename}" ?`)) return;
-  const d = await api(`/queue/collections/${encodeURIComponent(filename)}`, 'DELETE');
-  if (d.ok) {
-    showToast('Fichier supprimé ✓');
-    loadCollections();
-  } else {
-    showToast(d.message || 'Erreur suppression', 'error');
-  }
-}
 
 async function clearQueue(mode) {
   if (!confirm(`Purger les items ${mode === 'all' ? 'de toute la queue' : 'terminés'} ?`)) return;

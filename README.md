@@ -49,7 +49,6 @@ Seule la colonne « Ton dossier hôte » te concerne. Le chemin conteneur est fi
 |---|---|---|---|
 | `/mnt/user/appdata/mangaarr/config` | `/data/config` | Config persistante | ✅ Oui |
 | `/mnt/user/appdata/mangaarr/cache` | `/data/cache` | Cache metadata + couvertures | ✅ Oui |
-| `/mnt/user/appdata/mangaarr/emulecollections` | `/data/emulecollections` | Fichiers `.emulecollection` | ✅ Oui |
 | Ton dossier Incoming aMule | `/incoming` | Téléchargements eMule/aMule finis | Si tu utilises eMule/aMule |
 | Ta bibliothèque manga | `/media` | Destination des séries traitées | ✅ Oui |
 | Dossier de la catégorie qBittorrent | `/qbt-category` | Torrents terminés à traiter | Si tu utilises qBittorrent |
@@ -72,7 +71,6 @@ Seule la colonne « Ton dossier hôte » te concerne. Le chemin conteneur est fi
 | `MANGAARR_TORRENT_FILES` | `/torrent_files` | Stockage des `.torrent` |
 | `MANGAARR_TELEGRAM_WATCH` | `/telegram` | Dossier de téléchargement Telegram |
 | `MANGAARR_CACHE` | `/data/cache` | Cache metadata + covers |
-| `MANGAARR_EMULE` | `/data/emulecollections` | Dossier `.emulecollection` |
 | `MANGAARR_CONFIG` | `/data/config/config.json` | Fichier de config |
 | `MANGAARR_INCOMING_INTERVAL` | `60` | Fréquence du scan Incoming (secondes) |
 

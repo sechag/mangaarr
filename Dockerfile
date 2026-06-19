@@ -24,7 +24,7 @@ RUN pip install --no-cache-dir --root-user-action=ignore -r requirements.txt
 COPY . .
 
 # Dossiers internes + points de montage (existent même si un volume n'est pas monté)
-RUN mkdir -p /data/config /data/cache /data/emulecollections \
+RUN mkdir -p /data/config /data/cache \
              /incoming /media /qbt-category /torrent_files /telegram
 
 # ══════════════════════════════════════════════════════════════
@@ -41,8 +41,6 @@ ENV MANGAARR_INCOMING=/incoming
 ENV MANGAARR_DEST=/media
 # Cache metadata MangaDB + covers (persistant)
 ENV MANGAARR_CACHE=/data/cache
-# Dossier de sortie des .emulecollection
-ENV MANGAARR_EMULE=/data/emulecollections
 # Dossier surveillé pour les torrents qBittorrent terminés
 ENV MANGAARR_QBT_WATCH=/qbt-category
 # Stockage des .torrent téléchargés avant envoi à qBittorrent

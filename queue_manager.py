@@ -1,20 +1,11 @@
 """
 queue_manager.py — Gestion de la queue de téléchargements MangaArr
 - Stockage JSON persistant des items en queue
-- Génération de fichiers .emulecollection datés
-- Détection des tomes manquants via cache ebdz + Komga
 """
 import os, json, re, threading
 from datetime import datetime
 from urllib.parse import unquote
 import config as _config_mod
-
-# EMULE_DIR : overridable via env var Docker (MANGAARR_EMULE)
-EMULE_DIR = os.environ.get(
-    "MANGAARR_EMULE",
-    os.path.join(os.path.dirname(__file__), "emulecollections")
-)
-os.makedirs(EMULE_DIR, exist_ok=True)
 
 def _cache_dir() -> str:
     """Résout le dossier cache (persistant en container via /data/cache)."""
@@ -127,7 +118,6 @@ def _norm_key(s: str) -> str:
 def delete_items(filehashes: list) -> dict:
     """
     Supprime des items de la queue par leurs filehashes.
-    Met aussi à jour les fichiers .emulecollection existants (retire les liens ed2k).
     Retourne {"deleted": int}.
     """
     hashes = set(filehashes)
@@ -136,24 +126,6 @@ def delete_items(filehashes: list) -> dict:
         to_delete  = [i for i in items if i.get("filehash", "") in hashes]
         kept       = [i for i in items if i.get("filehash", "") not in hashes]
         _save(kept)
-
-    # Retire les liens ed2k des .emulecollection et .txt existants
-    urls_to_remove = {i.get("url", "").strip() for i in to_delete if i.get("url")}
-    if urls_to_remove and os.path.isdir(EMULE_DIR):
-        for fname in os.listdir(EMULE_DIR):
-            if not (fname.endswith(".emulecollection") or fname.endswith(".txt")):
-                continue
-            fpath = os.path.join(EMULE_DIR, fname)
-            try:
-                with open(fpath, "r", encoding="utf-8") as f:
-                    lines = f.readlines()
-                new_lines = [l for l in lines if l.strip() not in urls_to_remove]
-                if len(new_lines) != len(lines):
-                    with open(fpath, "w", encoding="utf-8") as f:
-                        f.writelines(new_lines)
-            except Exception:
-                pass
-
     return {"deleted": len(to_delete)}
 
 def update_status(filehash: str, status: str, history: dict = None):
@@ -196,136 +168,3 @@ def clear_queue():
         _save([])
 
 
-# ═══════════════════════════════════════════════════
-# GÉNÉRATION .emulecollection
-# ═══════════════════════════════════════════════════
-
-MAX_LINKS_PER_FILE = 150  # Au-delà → découpe en parties
-
-def _filter_items(items: list) -> list:
-    """Applique les filtres profiles (must_contain/must_not_contain)."""
-    try:
-        import profiles as _p
-        result = []
-        for item in items:
-            fn = item.get("filename", item.get("url", ""))
-            ok, reason = _p.passes_filters(fn)
-            if ok:
-                result.append(item)
-            else:
-                config.add_log(f"[Collection] Ignoré ({reason}) : {fn}", "info")
-        return result
-    except Exception:
-        return items
-
-
-def _collection_ext() -> str:
-    """Retourne .txt ou .emulecollection selon la config."""
-    try:
-        mm = _config_mod.get("media_management", {})
-        if mm.get("emulecollection_as_txt", False):
-            return ".txt"
-    except Exception:
-        pass
-    return ".emulecollection"
-
-
-def _write_collection_files(links: list, base_name: str) -> list:
-    """
-    Écrit une ou plusieurs parties .emulecollection / .txt (max MAX_LINKS_PER_FILE liens).
-    Retourne la liste des chemins créés.
-    """
-    if not links:
-        return []
-    ext   = _collection_ext()
-    ts    = datetime.now().strftime("%Y%m%d_%H%M%S")
-    paths = []
-    parts = [links[i:i+MAX_LINKS_PER_FILE] for i in range(0, len(links), MAX_LINKS_PER_FILE)]
-    for idx, part in enumerate(parts, 1):
-        suffix = f"_part{idx}" if len(parts) > 1 else ""
-        fname  = f"{ts}_{base_name}{suffix}{ext}"
-        fpath  = os.path.join(EMULE_DIR, fname)
-        with open(fpath, "w", encoding="utf-8") as f:
-            f.write("\n".join(part) + "\n")
-        paths.append(fpath)
-    return paths
-
-
-def generate_emulecollection(items: list = None, label: str = "",
-                             series_prefix: str = "") -> str:
-    """
-    Génère les fichiers .emulecollection en séparant ADD et UPGRADE.
-    series_prefix : si fourni, nomme le fichier {prefix}.{ts}_ADD.emulecollection
-    Si >MAX_LINKS_PER_FILE liens → découpe en parties numérotées.
-    Retourne le chemin du premier fichier créé (compatibilité).
-    """
-    if items is None:
-        items = [i for i in get_queue() if i.get("status") == "pending"]
-
-    items = _filter_items(items)
-    if not items:
-        ts    = datetime.now().strftime("%Y%m%d_%H%M%S")
-        fpath = os.path.join(EMULE_DIR, f"{ts}_empty.emulecollection")
-        open(fpath, "w").close()
-        return fpath
-
-    add_links     = [i["url"] for i in items if i.get("url","").startswith("ed2k://")
-                     and i.get("action", "missing") != "upgrade"]
-    upgrade_links = [i["url"] for i in items if i.get("url","").startswith("ed2k://")
-                     and i.get("action") == "upgrade"]
-
-    if series_prefix:
-        ext    = _collection_ext()
-        safe   = re.sub(r"[^A-Za-z0-9._\-]", "_", series_prefix)[:40]
-        ts     = datetime.now().strftime("%Y%m%d_%H%M%S")
-        all_paths = []
-        if add_links:
-            chunks = [add_links[i:i+MAX_LINKS_PER_FILE] for i in range(0, len(add_links), MAX_LINKS_PER_FILE)]
-            for idx, chunk in enumerate(chunks, 1):
-                suffix = f"_part{idx}" if len(chunks) > 1 else ""
-                fname  = f"{safe}.{ts}_ADD{suffix}{ext}"
-                fp     = os.path.join(EMULE_DIR, fname)
-                with open(fp, "w", encoding="utf-8") as f:
-                    f.write("\n".join(chunk) + "\n")
-                all_paths.append(fp)
-        if upgrade_links:
-            fname = f"{safe}.{ts}_UPGRADE{ext}"
-            fpath = os.path.join(EMULE_DIR, fname)
-            with open(fpath, "w", encoding="utf-8") as f:
-                f.write("\n".join(upgrade_links) + "\n")
-            all_paths.append(fpath)
-        return all_paths[0] if all_paths else ""
-
-    all_paths = []
-    all_paths.extend(_write_collection_files(add_links,     "ADD"))
-    all_paths.extend(_write_collection_files(upgrade_links, "UPGRADE"))
-
-    if not all_paths:
-        all_links = [i["url"] for i in items if i.get("url","").startswith("ed2k://")]
-        safe      = re.sub(r"[^a-zA-Z0-9_-]", "_", label)[:20] if label else "missing"
-        all_paths = _write_collection_files(all_links, safe)
-
-    return all_paths[0] if all_paths else ""
-
-
-def list_emulecollections() -> list:
-    """Liste les fichiers .emulecollection et .txt générés [{filename, path, size, created}]."""
-    files = []
-    for fn in sorted(os.listdir(EMULE_DIR), reverse=True):
-        if not (fn.endswith(".emulecollection") or fn.endswith(".txt")):
-            continue
-        fp = os.path.join(EMULE_DIR, fn)
-        stat = os.stat(fp)
-        files.append({
-            "filename": fn,
-            "path":     fp,
-            "size_kb":  round(stat.st_size / 1024, 1),
-            "created":  datetime.fromtimestamp(stat.st_mtime).strftime("%Y-%m-%d %H:%M:%S"),
-            "links":    sum(1 for line in open(fp) if line.startswith("ed2k://")),
-        })
-    return files
-
-
-# ═══════════════════════════════════════════════════
-# DÉTECTION TOMES MANQUANTS
-# ═══════════════════════════════════════════════════

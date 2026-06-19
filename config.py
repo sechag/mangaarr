@@ -18,7 +18,6 @@ DEFAULTS = {
         "auto_convert_cbr":      True,
         "auto_convert_pdf":      True,
         "auto_replace":          True,
-        "emulecollection_as_txt": False,
     },
     "profiles": {
         "tags":             [],
