@@ -113,8 +113,12 @@ def api_get_config():
 @app.route("/api/config", methods=["POST"])
 def api_set_config():
     d = request.json; cfg = config.load()
-    for k in ("mybbuser", "download_dir", "media_management", "_active_komga_unused"):
+    for k in ("mybbuser", "download_dir", "_active_komga_unused"):
         if k in d: cfg[k] = d[k]
+    # media_management : fusion (et non remplacement) pour ne jamais perdre
+    # une clé qu'un frontend plus ancien n'enverrait pas
+    if isinstance(d.get("media_management"), dict):
+        cfg.setdefault("media_management", {}).update(d["media_management"])
     # Assure que force_organize_enabled est dans media_management si passé directement
     if "force_organize_enabled" in d:
         cfg.setdefault("media_management", {})["force_organize_enabled"] = bool(d["force_organize_enabled"])

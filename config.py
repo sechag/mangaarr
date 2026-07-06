@@ -18,6 +18,7 @@ DEFAULTS = {
         "auto_convert_cbr":      True,
         "auto_convert_pdf":      True,
         "auto_replace":          True,
+        "ebdz_compare_enabled":  False,
     },
     "profiles": {
         "tags":             [],

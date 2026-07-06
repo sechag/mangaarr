@@ -476,27 +476,27 @@
       <h2>Automatisation</h2>
       <div class="toggle-row">
         <div><strong>Renommage automatique</strong><p>Format <code>{Titre}.T{XX}.FRENCH.CBZ.eBook-{TAG}</code></p></div>
-        <label class="toggle"><input type="checkbox" id="toggle-rename"><span class="toggle-slider"></span></label>
+        <label class="toggle"><input type="checkbox" id="toggle-rename" onchange="saveMediaSettings()"><span class="toggle-slider"></span></label>
       </div>
       <div class="toggle-row">
         <div><strong>Conversion CBR → CBZ</strong><p>Convertit les archives RAR en ZIP</p></div>
-        <label class="toggle"><input type="checkbox" id="toggle-cbr"><span class="toggle-slider"></span></label>
+        <label class="toggle"><input type="checkbox" id="toggle-cbr" onchange="saveMediaSettings()"><span class="toggle-slider"></span></label>
       </div>
       <div class="toggle-row">
         <div><strong>Conversion PDF → CBZ</strong><p>Convertit les PDF en archives d'images</p></div>
-        <label class="toggle"><input type="checkbox" id="toggle-pdf"><span class="toggle-slider"></span></label>
+        <label class="toggle"><input type="checkbox" id="toggle-pdf" onchange="saveMediaSettings()"><span class="toggle-slider"></span></label>
       </div>
       <div class="toggle-row">
         <div><strong>Remplacement automatique</strong><p>Remplace un tome si un meilleur tag est disponible</p></div>
-        <label class="toggle"><input type="checkbox" id="toggle-replace"><span class="toggle-slider"></span></label>
+        <label class="toggle"><input type="checkbox" id="toggle-replace" onchange="saveMediaSettings()"><span class="toggle-slider"></span></label>
       </div>
       <div class="toggle-row">
         <div><strong>Forcer l'organisation manuelle (Torrent)</strong><p>Affiche un bouton ▶ dans la queue Torrent pour forcer la copie/renommage en sélectionnant le fichier téléchargé. Désactivé par défaut.</p></div>
-        <label class="toggle"><input type="checkbox" id="toggle-force-organize"><span class="toggle-slider"></span></label>
+        <label class="toggle"><input type="checkbox" id="toggle-force-organize" onchange="saveMediaSettings()"><span class="toggle-slider"></span></label>
       </div>
       <div class="toggle-row">
         <div><strong>Comparaison de ma collection à eBDZ</strong><p>Lors d'un scan Découverte ED2K, détecte aussi les tomes que vous possédez et qu'eBDZ ne possède pas. Résultats visibles dans la page <a href="/ebdz-compare" style="color:var(--accent)">Comparaison eBDZ</a>.</p></div>
-        <label class="toggle"><input type="checkbox" id="toggle-ebdz-compare"><span class="toggle-slider"></span></label>
+        <label class="toggle"><input type="checkbox" id="toggle-ebdz-compare" onchange="saveMediaSettings()"><span class="toggle-slider"></span></label>
       </div>
     </div>
 
@@ -997,7 +997,7 @@
   <span id="task-toast-label">En cours…</span>
 </div>
 
-<script src="/static/js/app.js"></script>
+<script src="/static/js/app.js?v=1.1.7"></script>
 
 <!-- ── MODAL: File Browser — Ajouter librairie ── -->
 <div id="modal-file-browser" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:1000;align-items:center;justify-content:center">
