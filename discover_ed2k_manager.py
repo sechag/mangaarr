@@ -21,6 +21,9 @@ import profiles as _p
 _CACHE_DIR         = os.path.join(os.path.dirname(__file__), ".cache")
 CACHE_FILE         = os.path.join(_CACHE_DIR, "discover_ed2k_cache.json")
 COMPARE_CACHE_FILE = os.path.join(_CACHE_DIR, "ebdz_compare_cache.json")
+# Historique des comparaisons : dans le cache PERSISTANT (MANGAARR_CACHE → /data/cache)
+# pour survivre aux mises à jour du conteneur Docker.
+_PERSIST_CACHE_DIR = os.environ.get("MANGAARR_CACHE") or _CACHE_DIR
 CACHE_TTL          = 86400  # 24 heures
 
 
@@ -71,53 +74,127 @@ def cache_info() -> dict:
     return {"exists": False, "valid": False, "series_count": 0}
 
 
-# ── Cache comparaison inverse (tomes possédés absents d'eBDZ) ────────────────
+# ── Historique des scans de comparaison eBDZ ─────────────────────────────────
+# Chaque scan est sauvegardé dans .cache/ebdz_compare/compare_<YYYYMMDD_HHMMSS>.json
+# → historique daté consultable dans la page Comparaison eBDZ.
+# La sauvegarde est incrémentale pendant le scan : même si la connexion est
+# interrompue (onglet suspendu, PC en veille), les résultats déjà trouvés
+# restent enregistrés.
 
-def load_compare_cache() -> list | None:
-    """Retourne les résultats de comparaison eBDZ mis en cache (< 24h) ou None."""
+COMPARE_HISTORY_DIR = os.path.join(_PERSIST_CACHE_DIR, "ebdz_compare")
+
+_SCAN_ID_RE = None  # initialisé au premier usage
+
+
+def _valid_scan_id(scan_id: str) -> bool:
+    """Valide le format d'un scan_id (YYYYMMDD_HHMMSS) — évite tout path traversal."""
+    global _SCAN_ID_RE
+    if _SCAN_ID_RE is None:
+        import re
+        _SCAN_ID_RE = re.compile(r"^\d{8}_\d{6}$")
+    return bool(_SCAN_ID_RE.match(scan_id or ""))
+
+
+def _compare_scan_path(scan_id: str) -> str:
+    return os.path.join(COMPARE_HISTORY_DIR, f"compare_{scan_id}.json")
+
+
+def new_scan_id() -> str:
+    """Génère un identifiant de scan basé sur la date/heure."""
+    return time.strftime("%Y%m%d_%H%M%S")
+
+
+def save_compare_scan(scan_id: str, series_list: list, finished: bool = False) -> None:
+    """
+    Sauvegarde (ou met à jour) un scan de comparaison dans l'historique.
+    Appelée de façon incrémentale pendant le scan, puis avec finished=True à la fin.
+    """
+    if not _valid_scan_id(scan_id):
+        return
+    os.makedirs(COMPARE_HISTORY_DIR, exist_ok=True)
+    tmp = _compare_scan_path(scan_id) + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump({
+            "scan_id":   scan_id,
+            "timestamp": time.time(),
+            "finished":  finished,
+            "series":    series_list,
+        }, f)
+    os.replace(tmp, _compare_scan_path(scan_id))
+
+
+def load_compare_scan(scan_id: str) -> dict | None:
+    """Charge un scan de comparaison depuis l'historique."""
+    if not _valid_scan_id(scan_id):
+        return None
     try:
-        if os.path.exists(COMPARE_CACHE_FILE):
-            with open(COMPARE_CACHE_FILE, "r", encoding="utf-8") as f:
-                data = json.load(f)
-            if time.time() - data.get("timestamp", 0) < CACHE_TTL:
-                return data.get("series", [])
+        with open(_compare_scan_path(scan_id), "r", encoding="utf-8") as f:
+            return json.load(f)
     except Exception:
-        pass
-    return None
+        return None
 
 
-def save_compare_cache(series_list: list) -> None:
-    """Sauvegarde les résultats de comparaison eBDZ dans le cache."""
-    os.makedirs(_CACHE_DIR, exist_ok=True)
-    with open(COMPARE_CACHE_FILE, "w", encoding="utf-8") as f:
-        json.dump({"timestamp": time.time(), "series": series_list}, f)
-
-
-def clear_compare_cache() -> None:
-    """Supprime le cache de comparaison eBDZ."""
+def delete_compare_scan(scan_id: str) -> bool:
+    """Supprime un scan de l'historique."""
+    if not _valid_scan_id(scan_id):
+        return False
     try:
-        os.remove(COMPARE_CACHE_FILE)
+        os.remove(_compare_scan_path(scan_id))
+        return True
     except FileNotFoundError:
-        pass
+        return False
 
 
-def compare_cache_info() -> dict:
-    """Retourne des infos sur le cache de comparaison (âge, nombre de séries)."""
+def _migrate_old_compare_cache() -> None:
+    """Migre l'ancien fichier ebdz_compare_cache.json (v1.1.7) vers l'historique."""
+    if not os.path.exists(COMPARE_CACHE_FILE):
+        return
     try:
-        if os.path.exists(COMPARE_CACHE_FILE):
-            with open(COMPARE_CACHE_FILE, "r", encoding="utf-8") as f:
-                data = json.load(f)
-            age = time.time() - data.get("timestamp", 0)
-            return {
-                "exists": True,
-                "age_seconds": int(age),
-                "valid": age < CACHE_TTL,
-                "series_count": len(data.get("series", [])),
-                "timestamp": int(data.get("timestamp", 0)),
-            }
+        with open(COMPARE_CACHE_FILE, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        ts      = data.get("timestamp", time.time())
+        scan_id = time.strftime("%Y%m%d_%H%M%S", time.localtime(ts))
+        if not os.path.exists(_compare_scan_path(scan_id)):
+            save_compare_scan(scan_id, data.get("series", []), finished=True)
+        os.remove(COMPARE_CACHE_FILE)
     except Exception:
         pass
-    return {"exists": False, "valid": False, "series_count": 0}
+
+
+def list_compare_scans() -> list:
+    """
+    Liste les scans de comparaison enregistrés, du plus récent au plus ancien.
+    Retourne [{scan_id, timestamp, finished, series_count, tomes_count}].
+    """
+    _migrate_old_compare_cache()
+    scans = []
+    if not os.path.isdir(COMPARE_HISTORY_DIR):
+        return scans
+    for fn in os.listdir(COMPARE_HISTORY_DIR):
+        if not (fn.startswith("compare_") and fn.endswith(".json")):
+            continue
+        scan_id = fn[len("compare_"):-len(".json")]
+        data = load_compare_scan(scan_id)
+        if data is None:
+            continue
+        series = data.get("series", [])
+        scans.append({
+            "scan_id":      scan_id,
+            "timestamp":    int(data.get("timestamp", 0)),
+            "finished":     bool(data.get("finished", True)),
+            "series_count": len(series),
+            "tomes_count":  sum(s.get("ebdz_missing_count", 0) for s in series),
+        })
+    scans.sort(key=lambda s: s["scan_id"], reverse=True)
+    return scans
+
+
+def latest_compare_scan() -> dict | None:
+    """Retourne le scan de comparaison le plus récent, ou None."""
+    scans = list_compare_scans()
+    if not scans:
+        return None
+    return load_compare_scan(scans[0]["scan_id"])
 
 
 # ── Phase 1 : séries candidates (depuis le disque) ───────────────────────────

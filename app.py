@@ -1386,26 +1386,47 @@ def page_ebdz_compare():
     return render_template("ebdz_compare.html")
 
 
-@app.route("/api/ebdz-compare/cache")
-def api_ebdz_compare_cache():
-    """Retourne les résultats de comparaison eBDZ mis en cache (< 24h)."""
+@app.route("/api/ebdz-compare/history")
+def api_ebdz_compare_history():
+    """Liste l'historique des scans de comparaison eBDZ (du plus récent au plus ancien)."""
     enabled = bool(
         config.load().get("media_management", {}).get("ebdz_compare_enabled", False)
     )
-    series = discover_ed2k_manager.load_compare_cache()
-    info   = discover_ed2k_manager.compare_cache_info()
-    if series is None:
-        return jsonify({"ok": True, "enabled": enabled, "cached": False,
-                        "series": [], "cache_info": info})
+    return jsonify({
+        "ok":      True,
+        "enabled": enabled,
+        "scans":   discover_ed2k_manager.list_compare_scans(),
+    })
+
+
+@app.route("/api/ebdz-compare/history/<scan_id>")
+def api_ebdz_compare_scan(scan_id):
+    """Retourne le contenu d'un scan de comparaison enregistré."""
+    data = discover_ed2k_manager.load_compare_scan(scan_id)
+    if data is None:
+        return jsonify({"ok": False, "message": "Scan introuvable"})
+    return jsonify({"ok": True, "scan": data})
+
+
+@app.route("/api/ebdz-compare/history/<scan_id>", methods=["DELETE"])
+def api_ebdz_compare_scan_delete(scan_id):
+    """Supprime un scan de comparaison de l'historique."""
+    ok = discover_ed2k_manager.delete_compare_scan(scan_id)
+    return jsonify({"ok": ok})
+
+
+@app.route("/api/ebdz-compare/cache")
+def api_ebdz_compare_cache():
+    """Compat v1.1.7 : retourne le scan de comparaison le plus récent."""
+    enabled = bool(
+        config.load().get("media_management", {}).get("ebdz_compare_enabled", False)
+    )
+    data = discover_ed2k_manager.latest_compare_scan()
+    if data is None:
+        return jsonify({"ok": True, "enabled": enabled, "cached": False, "series": []})
     return jsonify({"ok": True, "enabled": enabled, "cached": True,
-                    "series": series, "cache_info": info})
-
-
-@app.route("/api/ebdz-compare/cache", methods=["DELETE"])
-def api_ebdz_compare_cache_clear():
-    """Supprime le cache de comparaison eBDZ."""
-    discover_ed2k_manager.clear_compare_cache()
-    return jsonify({"ok": True})
+                    "series": data.get("series", []),
+                    "scan_id": data.get("scan_id", "")})
 
 
 @app.route("/api/discover-ed2k/cache")
@@ -1461,6 +1482,9 @@ def api_discover_ed2k_stream():
 
         yield f"data: {json.dumps({'type': 'start', 'total': total})}\n\n"
 
+        # Identifiant du scan de comparaison (fichier daté dans .cache/ebdz_compare/)
+        scan_id = discover_ed2k_manager.new_scan_id() if compare_enabled else ""
+
         found_series   = []
         compare_series = []
         for i, s in enumerate(series_list):
@@ -1480,13 +1504,15 @@ def api_discover_ed2k_stream():
                 continue
 
             # Découverte classique : tomes manquants / upgrades
+            # Sauvegarde incrémentale : les résultats survivent à une coupure SSE
             if result.get("missing_count") or result.get("upgrade_count"):
                 found_series.append(result)
+                discover_ed2k_manager.save_cache(found_series)
                 yield f"data: {json.dumps({'type': 'series', 'series': result})}\n\n"
 
             # Comparaison inverse : tomes possédés absents d'eBDZ
             if compare_enabled and result.get("ebdz_missing_count"):
-                compare_series.append({
+                entry = {
                     "series_name":        result["series_name"],
                     "series_slug":        result.get("series_slug", ""),
                     "lib_id":             result.get("lib_id", ""),
@@ -1497,13 +1523,16 @@ def api_discover_ed2k_stream():
                     "no_thread":          result.get("no_thread", False),
                     "ebdz_missing_items": result.get("ebdz_missing_items", []),
                     "ebdz_missing_count": result.get("ebdz_missing_count", 0),
-                })
+                }
+                compare_series.append(entry)
+                discover_ed2k_manager.save_compare_scan(scan_id, compare_series)
+                yield f"data: {json.dumps({'type': 'compare_series', 'series': entry})}\n\n"
 
         discover_ed2k_manager.save_cache(found_series)
         if compare_enabled:
-            discover_ed2k_manager.save_compare_cache(compare_series)
+            discover_ed2k_manager.save_compare_scan(scan_id, compare_series, finished=True)
 
-        yield f"data: {json.dumps({'type': 'done', 'total_found': len(found_series), 'total_scanned': total, 'compare_found': len(compare_series)})}\n\n"
+        yield f"data: {json.dumps({'type': 'done', 'total_found': len(found_series), 'total_scanned': total, 'compare_found': len(compare_series), 'scan_id': scan_id})}\n\n"
 
     return Response(
         generate(),

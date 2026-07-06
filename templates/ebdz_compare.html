@@ -21,6 +21,7 @@
   padding: 12px 16px; margin-bottom: 16px;
 }
 .toolbar-label { font-size: 11px; color: var(--text-dim); text-transform: uppercase; letter-spacing: .05em; }
+.toolbar-sep { width: 1px; height: 22px; background: var(--border); margin: 0 4px; }
 
 /* ── Progress ── */
 .scan-progress-wrap { display: none; margin-bottom: 16px; }
@@ -125,7 +126,7 @@
 
   <div class="compare-toolbar">
     <span class="toolbar-label">Librairie</span>
-    <select id="lib-select" class="select-input" style="min-width:180px"></select>
+    <select id="lib-select" class="select-input" style="min-width:170px"></select>
     <span class="toolbar-label">Délai</span>
     <input type="number" id="delay-input" class="text-input" value="5000" min="500" max="30000" style="width:80px">
     <span style="font-size:11px;color:var(--text-dim)">ms / requête</span>
@@ -134,7 +135,12 @@
       Scanner
     </button>
     <button class="btn btn-secondary btn-sm" id="btn-stop" onclick="stopScan()" style="display:none">■ Stop</button>
-    <button class="btn btn-secondary btn-sm" onclick="clearCache()" title="Vider le cache">🗑 Vider le cache</button>
+    <span class="toolbar-sep"></span>
+    <span class="toolbar-label">Historique</span>
+    <select id="history-select" class="select-input" style="min-width:220px" onchange="loadScan(this.value)"></select>
+    <button class="btn btn-secondary btn-sm" id="btn-delete-scan" onclick="deleteScan()" title="Supprimer ce scan de l'historique">
+      <svg viewBox="0 0 20 20" fill="currentColor" style="width:13px;height:13px"><path fill-rule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clip-rule="evenodd"/></svg>
+    </button>
   </div>
 
   <div class="scan-progress-wrap" id="scan-progress">
@@ -142,8 +148,8 @@
     <span class="progress-label" id="progress-label"></span>
   </div>
 
-  <div class="info-banner accent hidden" id="cache-banner">
-    <span id="cache-banner-text"></span>
+  <div class="info-banner accent hidden" id="scan-banner">
+    <span id="scan-banner-text"></span>
   </div>
 
   <div id="results"></div>
@@ -155,7 +161,9 @@
 // ══════════════════════════════════════════════════════════════════════
 const esc = s => String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 
-let _series  = [];
+let _series  = [];       // séries du scan affiché
+let _scans   = [];       // historique [{scan_id, timestamp, ...}]
+let _curScan = '';       // scan_id affiché
 let _scanSSE = null;
 let _enabled = false;
 
@@ -166,44 +174,73 @@ async function api(path, method='GET', body=null) {
   return r.json().catch(() => ({}));
 }
 
+function fmtScanDate(scanId) {
+  // scanId = YYYYMMDD_HHMMSS
+  const m = String(scanId).match(/^(\d{4})(\d{2})(\d{2})_(\d{2})(\d{2})/);
+  return m ? `${m[3]}/${m[2]}/${m[1]} ${m[4]}:${m[5]}` : scanId;
+}
+
 // ── INIT ──────────────────────────────────────────────────────────────
 window.addEventListener('DOMContentLoaded', async () => {
   const d = await api('/libraries');
   const sel = document.getElementById('lib-select');
   sel.innerHTML = '<option value="">Toutes les librairies</option>' +
     (d.libraries||[]).map(l => `<option value="${esc(l.id)}">${esc(l.name)}</option>`).join('');
-  await loadCache();
+  await loadHistory();
 });
 
-// ── CACHE ─────────────────────────────────────────────────────────────
-async function loadCache() {
-  const d = await api('/ebdz-compare/cache');
+// ── HISTORIQUE ────────────────────────────────────────────────────────
+async function loadHistory(selectId = '') {
+  const d = await api('/ebdz-compare/history');
   _enabled = !!d.enabled;
+  _scans   = d.scans || [];
   document.getElementById('disabled-banner').classList.toggle('hidden', _enabled);
   document.getElementById('btn-scan').disabled = !_enabled;
 
-  if (d.cached && d.series) {
-    _series = d.series;
-    const info = d.cache_info || {};
-    const ageH = info.age_seconds ? Math.round(info.age_seconds / 3600) : '?';
-    const banner = document.getElementById('cache-banner');
-    banner.classList.remove('hidden');
-    document.getElementById('cache-banner-text').textContent =
-      `Résultats du dernier scan (il y a ${ageH}h) — ${d.series.length} série(s) avec des tomes absents d'eBDZ`;
-    render();
-  } else {
-    _series = [];
+  const sel = document.getElementById('history-select');
+  if (!_scans.length) {
+    sel.innerHTML = '<option value="">Aucun scan enregistré</option>';
+    document.getElementById('btn-delete-scan').disabled = true;
+    _series = []; _curScan = '';
     renderEmpty(_enabled
-      ? "Lance un scan pour comparer ta collection avec eBDZ. Le scan alimente aussi la Découverte ED2K."
+      ? "Lance un scan pour comparer ta collection avec eBDZ. Chaque scan est enregistré dans l'historique (résultats conservés même si la connexion est interrompue)."
       : "Active l'option « Comparaison eBDZ » dans Settings > Media Management, puis lance un scan.");
+    return;
   }
+
+  sel.innerHTML = _scans.map(s => {
+    const label = `${fmtScanDate(s.scan_id)} — ${s.series_count} série(s), ${s.tomes_count} tome(s)${s.finished ? '' : ' ⏸ interrompu'}`;
+    return `<option value="${esc(s.scan_id)}">${esc(label)}</option>`;
+  }).join('');
+  document.getElementById('btn-delete-scan').disabled = false;
+
+  const target = selectId && _scans.some(s => s.scan_id === selectId) ? selectId : _scans[0].scan_id;
+  sel.value = target;
+  await loadScan(target);
 }
 
-async function clearCache() {
-  await api('/ebdz-compare/cache', 'DELETE');
-  _series = [];
-  document.getElementById('cache-banner').classList.add('hidden');
-  renderEmpty('Cache vidé. Lance un nouveau scan.');
+async function loadScan(scanId) {
+  if (!scanId) return;
+  const d = await api(`/ebdz-compare/history/${encodeURIComponent(scanId)}`);
+  if (!d.ok) { renderEmpty(d.message || 'Scan introuvable.'); return; }
+  _curScan = scanId;
+  _series  = d.scan.series || [];
+  const meta = _scans.find(s => s.scan_id === scanId);
+  const banner = document.getElementById('scan-banner');
+  banner.classList.remove('hidden');
+  document.getElementById('scan-banner-text').textContent =
+    `Scan du ${fmtScanDate(scanId)}` + (meta && !meta.finished ? ' (interrompu avant la fin — résultats partiels)' : '');
+  render();
+}
+
+async function deleteScan() {
+  const sel = document.getElementById('history-select');
+  const scanId = sel.value;
+  if (!scanId) return;
+  if (!confirm(`Supprimer le scan du ${fmtScanDate(scanId)} de l'historique ?`)) return;
+  await api(`/ebdz-compare/history/${encodeURIComponent(scanId)}`, 'DELETE');
+  document.getElementById('scan-banner').classList.add('hidden');
+  await loadHistory();
 }
 
 // ── SCAN SSE (réutilise le flux Découverte ED2K) ──────────────────────
@@ -214,7 +251,8 @@ function startScan() {
   const lib_id   = document.getElementById('lib-select').value;
   const delay_ms = parseInt(document.getElementById('delay-input').value) || 5000;
 
-  document.getElementById('cache-banner').classList.add('hidden');
+  _series = [];
+  document.getElementById('scan-banner').classList.add('hidden');
   document.getElementById('btn-scan').disabled = true;
   document.getElementById('btn-stop').style.display = '';
 
@@ -224,7 +262,7 @@ function startScan() {
   progress.classList.add('visible');
   fill.style.width = '2%';
   label.textContent = 'Connexion au flux SSE…';
-  renderEmpty('Scan en cours — les résultats seront affichés à la fin du scan…');
+  renderEmpty('Scan en cours — les résultats apparaissent au fur et à mesure et sont enregistrés dans l\'historique…');
 
   const params = new URLSearchParams({ delay_ms });
   if (lib_id) params.set('lib_id', lib_id);
@@ -243,11 +281,16 @@ function startScan() {
       fill.style.width  = pct + '%';
       label.textContent = `${ev.current} / ${ev.total} scannées — ${ev.series_name || ''}`;
     }
+    else if (ev.type === 'compare_series') {
+      // Résultat en direct (déjà sauvegardé côté serveur)
+      _series.push(ev.series);
+      render();
+    }
     else if (ev.type === 'done') {
       fill.style.width  = '100%';
       label.textContent = `Terminé — ${ev.compare_found ?? 0} série(s) avec des tomes absents d'eBDZ`;
       finishScan();
-      loadCache();
+      loadHistory(ev.scan_id || '');
     }
     else if (ev.type === 'error') {
       label.textContent = ev.message || 'Erreur';
@@ -257,13 +300,14 @@ function startScan() {
   };
 
   _scanSSE.onerror = () => {
-    label.textContent = 'Connexion interrompue';
-    label.style.color = 'var(--danger)';
+    label.textContent = 'Connexion interrompue — les résultats déjà trouvés sont dans l\'historique';
+    label.style.color = 'var(--warning)';
     finishScan();
+    loadHistory();
   };
 }
 
-function stopScan() { if (_scanSSE) { _scanSSE.close(); _scanSSE = null; } finishScan(); }
+function stopScan() { if (_scanSSE) { _scanSSE.close(); _scanSSE = null; } finishScan(); loadHistory(); }
 
 function finishScan() {
   if (_scanSSE) { _scanSSE.close(); _scanSSE = null; }
@@ -272,7 +316,7 @@ function finishScan() {
   setTimeout(() => {
     document.getElementById('scan-progress').classList.remove('visible');
     document.getElementById('progress-label').style.color = '';
-  }, 4000);
+  }, 5000);
 }
 
 // ── RENDU ─────────────────────────────────────────────────────────────
@@ -288,7 +332,7 @@ function renderEmpty(msg) {
 function render() {
   const panel = document.getElementById('results');
   if (!_series.length) {
-    renderEmpty("Aucun tome absent d'eBDZ — ta collection est entièrement couverte par eBDZ. 🎉");
+    renderEmpty("Aucun tome absent d'eBDZ dans ce scan — ta collection est entièrement couverte par eBDZ. 🎉");
     return;
   }
 
