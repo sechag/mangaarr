@@ -1,0 +1,325 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MangaArr — Comparaison eBDZ</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/static/css/app.css">
+<style>
+/* ── Layout ── */
+.compare-wrap { max-width: 1100px; margin: 0 auto; }
+.compare-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 6px; }
+.compare-header h1 { font-size: 22px; font-weight: 700; color: var(--text-head); margin: 0; }
+.compare-sub { font-size: 13px; color: var(--text-dim); margin-bottom: 20px; }
+
+/* ── Toolbar ── */
+.compare-toolbar {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius);
+  padding: 12px 16px; margin-bottom: 16px;
+}
+.toolbar-label { font-size: 11px; color: var(--text-dim); text-transform: uppercase; letter-spacing: .05em; }
+
+/* ── Progress ── */
+.scan-progress-wrap { display: none; margin-bottom: 16px; }
+.scan-progress-wrap.visible { display: block; }
+.progress-bar-outer { height: 4px; background: var(--border); border-radius: 2px; overflow: hidden; margin-bottom: 5px; }
+.progress-bar-inner { height: 100%; background: var(--accent); border-radius: 2px; transition: width .3s; width: 0%; }
+.progress-label { font-size: 11px; color: var(--text-dim); }
+
+/* ── Banners ── */
+.info-banner {
+  padding: 10px 14px; border-radius: var(--radius); font-size: 13px; margin-bottom: 16px;
+  display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap;
+}
+.info-banner.warn   { background: rgba(255,180,0,.08); border: 1px solid var(--warning); color: var(--warning); }
+.info-banner.accent { background: var(--accent-dim); border: 1px solid var(--accent); color: var(--accent); }
+.info-banner.hidden { display: none; }
+
+/* ── Cartes séries ── */
+.cmp-card {
+  background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius);
+  padding: 14px 16px; margin-bottom: 10px;
+}
+.cmp-card-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.cmp-card-title { font-size: 15px; font-weight: 600; color: var(--text-head); }
+.cmp-card-title a { color: inherit; text-decoration: none; }
+.cmp-card-title a:hover { color: var(--accent); }
+.cmp-link-ico { color: var(--text-dim); text-decoration: none; font-size: 15px; }
+.cmp-link-ico:hover { color: var(--accent); }
+.cmp-badge {
+  margin-left: auto; flex-shrink: 0; padding: 2px 10px; border-radius: 11px;
+  background: rgba(255,180,0,.12); color: var(--warning); font-size: 11px; font-weight: 700;
+}
+.cmp-badge.no-thread { background: rgba(255,80,80,.12); color: var(--danger); }
+.cmp-card-sub { font-size: 12px; color: var(--text-dim); margin: 4px 0 10px; }
+.cmp-tomes { display: flex; gap: 6px; flex-wrap: wrap; }
+.cmp-tome-chip {
+  padding: 3px 9px; border-radius: 10px; background: var(--bg-input);
+  border: 1px solid var(--border); font-size: 11px; font-weight: 600; color: var(--text-head);
+  cursor: default;
+}
+
+/* ── Empty state ── */
+.empty-panel {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  color: var(--text-dim); text-align: center; padding: 60px 20px; gap: 12px;
+}
+.empty-panel svg { width: 48px; height: 48px; opacity: .3; }
+.empty-panel p   { font-size: 13px; max-width: 340px; line-height: 1.5; }
+</style>
+</head>
+<body>
+
+<!-- Sidebar -->
+<aside id="sidebar">
+  <div class="sidebar-logo">
+    <svg viewBox="0 0 36 36" fill="none"><rect width="36" height="36" rx="8" fill="#00b5cc"/><text x="18" y="25" text-anchor="middle" font-size="18" font-weight="700" fill="white" font-family="Inter">M</text></svg>
+    <span>MangaArr</span>
+  </div>
+  <nav class="sidebar-nav">
+    <div class="nav-section-label">Collection</div>
+    <a class="nav-item" href="/">
+      <svg viewBox="0 0 20 20" fill="currentColor"><path d="M2 6a2 2 0 012-2h5l2 2h5a2 2 0 012 2v6a2 2 0 01-2 2H4a2 2 0 01-2-2V6z"/></svg>
+      Collection
+    </a>
+    <div class="nav-section-label">Activity</div>
+    <a class="nav-item" href="/discover">
+      <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z" clip-rule="evenodd"/></svg>
+      Découverte Torrent
+    </a>
+    <a class="nav-item" href="/discover-ed2k">
+      <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M12.586 4.586a2 2 0 112.828 2.828l-3 3a2 2 0 01-2.828 0 1 1 0 00-1.414 1.414 4 4 0 005.656 0l3-3a4 4 0 00-5.656-5.656l-1.5 1.5a1 1 0 101.414 1.414l1.5-1.5zm-5 5a2 2 0 012.828 0 1 1 0 001.414-1.414 4 4 0 00-5.656 0l-3 3a4 4 0 105.656 5.656l1.5-1.5a1 1 0 10-1.414-1.414l-1.5 1.5a2 2 0 11-2.828-2.828l3-3z" clip-rule="evenodd"/></svg>
+      Découverte ED2K
+    </a>
+    <a class="nav-item active" href="/ebdz-compare">
+      <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M3 3a1 1 0 011 1v12h12a1 1 0 110 2H3a1 1 0 01-1-1V4a1 1 0 011-1zm10.293 2.293a1 1 0 011.414 0l3 3a1 1 0 01-1.414 1.414L15 8.414V13a1 1 0 11-2 0V8.414l-1.293 1.293a1 1 0 01-1.414-1.414l3-3zM7 10a1 1 0 011 1v2a1 1 0 11-2 0v-2a1 1 0 011-1zm3-3a1 1 0 011 1v5a1 1 0 11-2 0V8a1 1 0 011-1z" clip-rule="evenodd"/></svg>
+      Comparaison eBDZ
+    </a>
+    <div class="nav-section-label">Settings</div>
+    <a class="nav-item" href="/">
+      <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M3 17a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm3.293-7.707a1 1 0 011.414 0L9 10.586V3a1 1 0 112 0v7.586l1.293-1.293a1 1 0 111.414 1.414l-3 3a1 1 0 01-1.414 0l-3-3a1 1 0 010-1.414z" clip-rule="evenodd"/></svg>
+      Paramètres
+    </a>
+  </nav>
+  <div class="sidebar-footer">
+    <div class="status-dot"></div>
+    <span>MangaArr</span>
+  </div>
+</aside>
+
+<!-- Contenu principal -->
+<main id="main-content">
+<div class="compare-wrap">
+
+  <div class="compare-header">
+    <h1>Comparaison eBDZ</h1>
+  </div>
+  <div class="compare-sub" id="page-subtitle">Tomes de votre collection qu'eBDZ ne possède pas.</div>
+
+  <div class="info-banner warn hidden" id="disabled-banner">
+    <span>⚠ L'option « Comparaison eBDZ » est désactivée — active-la dans <strong>Settings &gt; Media Management</strong> puis lance un scan.</span>
+  </div>
+
+  <div class="compare-toolbar">
+    <span class="toolbar-label">Librairie</span>
+    <select id="lib-select" class="select-input" style="min-width:180px"></select>
+    <span class="toolbar-label">Délai</span>
+    <input type="number" id="delay-input" class="text-input" value="5000" min="500" max="30000" style="width:80px">
+    <span style="font-size:11px;color:var(--text-dim)">ms / requête</span>
+    <button class="btn btn-primary btn-sm" id="btn-scan" onclick="startScan()">
+      <svg viewBox="0 0 20 20" fill="currentColor" style="width:13px;height:13px"><path fill-rule="evenodd" d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z" clip-rule="evenodd"/></svg>
+      Scanner
+    </button>
+    <button class="btn btn-secondary btn-sm" id="btn-stop" onclick="stopScan()" style="display:none">■ Stop</button>
+    <button class="btn btn-secondary btn-sm" onclick="clearCache()" title="Vider le cache">🗑 Vider le cache</button>
+  </div>
+
+  <div class="scan-progress-wrap" id="scan-progress">
+    <div class="progress-bar-outer"><div class="progress-bar-inner" id="progress-fill"></div></div>
+    <span class="progress-label" id="progress-label"></span>
+  </div>
+
+  <div class="info-banner accent hidden" id="cache-banner">
+    <span id="cache-banner-text"></span>
+  </div>
+
+  <div id="results"></div>
+
+</div>
+</main>
+
+<script>
+// ══════════════════════════════════════════════════════════════════════
+const esc = s => String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+
+let _series  = [];
+let _scanSSE = null;
+let _enabled = false;
+
+async function api(path, method='GET', body=null) {
+  const opts = { method, headers: {'Content-Type':'application/json'} };
+  if (body) opts.body = JSON.stringify(body);
+  const r = await fetch('/api' + path, opts);
+  return r.json().catch(() => ({}));
+}
+
+// ── INIT ──────────────────────────────────────────────────────────────
+window.addEventListener('DOMContentLoaded', async () => {
+  const d = await api('/libraries');
+  const sel = document.getElementById('lib-select');
+  sel.innerHTML = '<option value="">Toutes les librairies</option>' +
+    (d.libraries||[]).map(l => `<option value="${esc(l.id)}">${esc(l.name)}</option>`).join('');
+  await loadCache();
+});
+
+// ── CACHE ─────────────────────────────────────────────────────────────
+async function loadCache() {
+  const d = await api('/ebdz-compare/cache');
+  _enabled = !!d.enabled;
+  document.getElementById('disabled-banner').classList.toggle('hidden', _enabled);
+  document.getElementById('btn-scan').disabled = !_enabled;
+
+  if (d.cached && d.series) {
+    _series = d.series;
+    const info = d.cache_info || {};
+    const ageH = info.age_seconds ? Math.round(info.age_seconds / 3600) : '?';
+    const banner = document.getElementById('cache-banner');
+    banner.classList.remove('hidden');
+    document.getElementById('cache-banner-text').textContent =
+      `Résultats du dernier scan (il y a ${ageH}h) — ${d.series.length} série(s) avec des tomes absents d'eBDZ`;
+    render();
+  } else {
+    _series = [];
+    renderEmpty(_enabled
+      ? "Lance un scan pour comparer ta collection avec eBDZ. Le scan alimente aussi la Découverte ED2K."
+      : "Active l'option « Comparaison eBDZ » dans Settings > Media Management, puis lance un scan.");
+  }
+}
+
+async function clearCache() {
+  await api('/ebdz-compare/cache', 'DELETE');
+  _series = [];
+  document.getElementById('cache-banner').classList.add('hidden');
+  renderEmpty('Cache vidé. Lance un nouveau scan.');
+}
+
+// ── SCAN SSE (réutilise le flux Découverte ED2K) ──────────────────────
+function startScan() {
+  if (!_enabled) return;
+  if (_scanSSE) { _scanSSE.close(); _scanSSE = null; }
+
+  const lib_id   = document.getElementById('lib-select').value;
+  const delay_ms = parseInt(document.getElementById('delay-input').value) || 5000;
+
+  document.getElementById('cache-banner').classList.add('hidden');
+  document.getElementById('btn-scan').disabled = true;
+  document.getElementById('btn-stop').style.display = '';
+
+  const progress = document.getElementById('scan-progress');
+  const fill     = document.getElementById('progress-fill');
+  const label    = document.getElementById('progress-label');
+  progress.classList.add('visible');
+  fill.style.width = '2%';
+  label.textContent = 'Connexion au flux SSE…';
+  renderEmpty('Scan en cours — les résultats seront affichés à la fin du scan…');
+
+  const params = new URLSearchParams({ delay_ms });
+  if (lib_id) params.set('lib_id', lib_id);
+
+  _scanSSE = new EventSource(`/api/discover-ed2k/stream?${params}`);
+
+  _scanSSE.onmessage = (e) => {
+    let ev;
+    try { ev = JSON.parse(e.data); } catch { return; }
+
+    if (ev.type === 'start') {
+      label.textContent = `0 / ${ev.total} séries scannées`;
+    }
+    else if (ev.type === 'progress') {
+      const pct = Math.round((ev.current / ev.total) * 100);
+      fill.style.width  = pct + '%';
+      label.textContent = `${ev.current} / ${ev.total} scannées — ${ev.series_name || ''}`;
+    }
+    else if (ev.type === 'done') {
+      fill.style.width  = '100%';
+      label.textContent = `Terminé — ${ev.compare_found ?? 0} série(s) avec des tomes absents d'eBDZ`;
+      finishScan();
+      loadCache();
+    }
+    else if (ev.type === 'error') {
+      label.textContent = ev.message || 'Erreur';
+      label.style.color = 'var(--danger)';
+      finishScan();
+    }
+  };
+
+  _scanSSE.onerror = () => {
+    label.textContent = 'Connexion interrompue';
+    label.style.color = 'var(--danger)';
+    finishScan();
+  };
+}
+
+function stopScan() { if (_scanSSE) { _scanSSE.close(); _scanSSE = null; } finishScan(); }
+
+function finishScan() {
+  if (_scanSSE) { _scanSSE.close(); _scanSSE = null; }
+  document.getElementById('btn-scan').disabled = !_enabled;
+  document.getElementById('btn-stop').style.display = 'none';
+  setTimeout(() => {
+    document.getElementById('scan-progress').classList.remove('visible');
+    document.getElementById('progress-label').style.color = '';
+  }, 4000);
+}
+
+// ── RENDU ─────────────────────────────────────────────────────────────
+function renderEmpty(msg) {
+  document.getElementById('results').innerHTML = `
+    <div class="empty-panel">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+      <p>${esc(msg)}</p>
+    </div>`;
+  document.getElementById('page-subtitle').textContent = "Tomes de votre collection qu'eBDZ ne possède pas.";
+}
+
+function render() {
+  const panel = document.getElementById('results');
+  if (!_series.length) {
+    renderEmpty("Aucun tome absent d'eBDZ — ta collection est entièrement couverte par eBDZ. 🎉");
+    return;
+  }
+
+  const totalTomes = _series.reduce((acc, s) => acc + (s.ebdz_missing_count || 0), 0);
+  document.getElementById('page-subtitle').textContent =
+    `${totalTomes} tome(s) répartis sur ${_series.length} série(s) qu'eBDZ ne possède pas.`;
+
+  panel.innerHTML = _series.map(s => {
+    const chips = (s.ebdz_missing_items || []).map(it =>
+      `<span class="cmp-tome-chip" title="${esc(it.filename || '')}">T${String(it.tome_number).padStart(2,'0')}${it.tag ? ' · ' + esc(it.tag) : ''}</span>`
+    ).join('');
+    const nameHtml = s.series_slug
+      ? `<a href="/series/${esc(s.series_slug)}" title="Ouvrir dans ma collection">${esc(s.series_name)}</a>`
+      : esc(s.series_name);
+    const linkHtml = s.thread_url
+      ? `<a class="cmp-link-ico" href="${esc(s.thread_url)}" target="_blank" rel="noopener" title="Ouvrir le thread du forum eBDZ dans un nouvel onglet">🔗</a>`
+      : '';
+    const badge = s.no_thread
+      ? `<span class="cmp-badge no-thread">Série absente d'eBDZ</span>`
+      : `<span class="cmp-badge">${s.ebdz_missing_count} tome(s) absent(s)</span>`;
+    return `<div class="cmp-card">
+      <div class="cmp-card-head">
+        <span class="cmp-card-title">${nameHtml}</span>
+        ${linkHtml}
+        ${badge}
+      </div>
+      <div class="cmp-card-sub">${s.owned_count} tome(s) en librairie · ${esc(s.lib_name)}</div>
+      <div class="cmp-tomes">${chips}</div>
+    </div>`;
+  }).join('');
+}
+</script>
+</body>
+</html>

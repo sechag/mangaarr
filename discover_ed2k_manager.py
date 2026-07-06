@@ -18,9 +18,10 @@ import profiles as _p
 
 # ── Cache 24h ────────────────────────────────────────────────────────────────
 
-_CACHE_DIR  = os.path.join(os.path.dirname(__file__), ".cache")
-CACHE_FILE  = os.path.join(_CACHE_DIR, "discover_ed2k_cache.json")
-CACHE_TTL   = 86400  # 24 heures
+_CACHE_DIR         = os.path.join(os.path.dirname(__file__), ".cache")
+CACHE_FILE         = os.path.join(_CACHE_DIR, "discover_ed2k_cache.json")
+COMPARE_CACHE_FILE = os.path.join(_CACHE_DIR, "ebdz_compare_cache.json")
+CACHE_TTL          = 86400  # 24 heures
 
 
 def load_cache() -> list | None:
@@ -70,6 +71,55 @@ def cache_info() -> dict:
     return {"exists": False, "valid": False, "series_count": 0}
 
 
+# ── Cache comparaison inverse (tomes possédés absents d'eBDZ) ────────────────
+
+def load_compare_cache() -> list | None:
+    """Retourne les résultats de comparaison eBDZ mis en cache (< 24h) ou None."""
+    try:
+        if os.path.exists(COMPARE_CACHE_FILE):
+            with open(COMPARE_CACHE_FILE, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            if time.time() - data.get("timestamp", 0) < CACHE_TTL:
+                return data.get("series", [])
+    except Exception:
+        pass
+    return None
+
+
+def save_compare_cache(series_list: list) -> None:
+    """Sauvegarde les résultats de comparaison eBDZ dans le cache."""
+    os.makedirs(_CACHE_DIR, exist_ok=True)
+    with open(COMPARE_CACHE_FILE, "w", encoding="utf-8") as f:
+        json.dump({"timestamp": time.time(), "series": series_list}, f)
+
+
+def clear_compare_cache() -> None:
+    """Supprime le cache de comparaison eBDZ."""
+    try:
+        os.remove(COMPARE_CACHE_FILE)
+    except FileNotFoundError:
+        pass
+
+
+def compare_cache_info() -> dict:
+    """Retourne des infos sur le cache de comparaison (âge, nombre de séries)."""
+    try:
+        if os.path.exists(COMPARE_CACHE_FILE):
+            with open(COMPARE_CACHE_FILE, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            age = time.time() - data.get("timestamp", 0)
+            return {
+                "exists": True,
+                "age_seconds": int(age),
+                "valid": age < CACHE_TTL,
+                "series_count": len(data.get("series", [])),
+                "timestamp": int(data.get("timestamp", 0)),
+            }
+    except Exception:
+        pass
+    return {"exists": False, "valid": False, "series_count": 0}
+
+
 # ── Phase 1 : séries candidates (depuis le disque) ───────────────────────────
 
 def get_candidate_series(lib_id: str = "") -> list:
@@ -88,8 +138,13 @@ def get_candidate_series(lib_id: str = "") -> list:
             continue
         series_map = folder_scanner.scan_series_on_disk(lib["path"])
         for series_name, data in series_map.items():
+            # Slug = même construction que library_manager.scan_library
+            # → permet de lier vers la page /series/<slug> de la collection
+            series_dir = os.path.join(lib["path"], series_name)
+            slug = lib_mgr._slugify(series_name) + "--" + lib_mgr._series_id(series_dir)
             results.append({
                 "series_name": series_name,
+                "series_slug": slug,
                 "lib_id":      lib["id"],
                 "lib_name":    lib["name"],
                 "owned_count": len(data.get("tomes_presents", set())),
@@ -110,11 +165,22 @@ def _extract_num(val):
     return int(m.group(1)) if m else None
 
 
-def enrich_with_ed2k(session, entry: dict) -> dict | None:
+def _owned_item(tomes_info: dict, n: int) -> dict:
+    """Construit un item {tome_number, filename, tag} depuis tomes_info."""
+    owned = tomes_info.get(str(n)) or tomes_info.get(n) or {}
+    return {
+        "tome_number": n,
+        "filename":    owned.get("filename", ""),
+        "tag":         owned.get("tag", ""),
+    }
+
+
+def enrich_with_ed2k(session, entry: dict, include_ebdz_missing: bool = False) -> dict | None:
     """
     Cherche le thread ebdz d'une série, scrape les liens ed2k, et calcule :
-      - missing_items : tomes absents du disque
-      - upgrade_items : tomes possédés dont ebdz propose un meilleur tag
+      - missing_items      : tomes absents du disque
+      - upgrade_items      : tomes possédés dont ebdz propose un meilleur tag
+      - ebdz_missing_items : tomes possédés qu'eBDZ NE possède PAS (si include_ebdz_missing)
     Retourne None si aucun thread ou aucun résultat.
 
     Réutilise la même logique de comparaison que folder_scanner.detect_missing_from_disk.
@@ -128,6 +194,24 @@ def enrich_with_ed2k(session, entry: dict) -> dict | None:
 
     thread = ebdz_scraper.find_thread_for_series(series_name, lib_id=lib_id)
     if not thread:
+        # Série introuvable sur eBDZ → tous les tomes possédés sont "absents d'eBDZ"
+        if include_ebdz_missing and owned_nums:
+            return {
+                "series_name":        series_name,
+                "series_slug":        entry.get("series_slug", ""),
+                "lib_id":             lib_id,
+                "lib_name":           entry.get("lib_name", ""),
+                "owned_count":        entry.get("owned_count", 0),
+                "thread_url":         "",
+                "thread_name":        "",
+                "no_thread":          True,
+                "missing_items":      [],
+                "upgrade_items":      [],
+                "missing_count":      0,
+                "upgrade_count":      0,
+                "ebdz_missing_items": [_owned_item(tomes_info, n) for n in sorted(owned_nums)],
+                "ebdz_missing_count": len(owned_nums),
+            }
         return None
 
     raw_links    = ebdz_scraper.scrape_thread_ed2k(session, thread["url"])
@@ -166,21 +250,35 @@ def enrich_with_ed2k(session, entry: dict) -> dict | None:
                 item["owned_score"] = owned_score
                 upgrade_items.append(item)
 
-    if not missing_items and not upgrade_items:
+    # Comparaison inverse : tomes possédés qu'eBDZ ne propose pas
+    ebdz_missing_items = []
+    if include_ebdz_missing:
+        ebdz_nums = {n for n in (_extract_num(t) for t in best_by_tome.keys()) if n}
+        ebdz_missing_items = [
+            _owned_item(tomes_info, n)
+            for n in sorted(owned_nums)
+            if n not in ebdz_nums
+        ]
+
+    if not missing_items and not upgrade_items and not ebdz_missing_items:
         return None
 
     missing_items.sort(key=lambda i: _extract_num(i.get("tome_number")) or 0)
     upgrade_items.sort(key=lambda i: _extract_num(i.get("tome_number")) or 0)
 
     return {
-        "series_name":   series_name,
-        "lib_id":        lib_id,
-        "lib_name":      entry.get("lib_name", ""),
-        "owned_count":   entry.get("owned_count", 0),
-        "thread_url":    thread.get("url", ""),
-        "thread_name":   thread.get("name", ""),
-        "missing_items": missing_items,
-        "upgrade_items": upgrade_items,
-        "missing_count": len(missing_items),
-        "upgrade_count": len(upgrade_items),
+        "series_name":        series_name,
+        "series_slug":        entry.get("series_slug", ""),
+        "lib_id":             lib_id,
+        "lib_name":           entry.get("lib_name", ""),
+        "owned_count":        entry.get("owned_count", 0),
+        "thread_url":         thread.get("url", ""),
+        "thread_name":        thread.get("name", ""),
+        "no_thread":          False,
+        "missing_items":      missing_items,
+        "upgrade_items":      upgrade_items,
+        "missing_count":      len(missing_items),
+        "upgrade_count":      len(upgrade_items),
+        "ebdz_missing_items": ebdz_missing_items,
+        "ebdz_missing_count": len(ebdz_missing_items),
     }

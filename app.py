@@ -1376,6 +1376,34 @@ def api_discover_download():
 # DÉCOUVERTE ED2K (eMule/aMule)
 # ════════════════════════════════════════════════════════
 
+@app.route("/ebdz-compare")
+def page_ebdz_compare():
+    """Page dédiée : tomes possédés qu'eBDZ ne possède pas."""
+    return render_template("ebdz_compare.html")
+
+
+@app.route("/api/ebdz-compare/cache")
+def api_ebdz_compare_cache():
+    """Retourne les résultats de comparaison eBDZ mis en cache (< 24h)."""
+    enabled = bool(
+        config.load().get("media_management", {}).get("ebdz_compare_enabled", False)
+    )
+    series = discover_ed2k_manager.load_compare_cache()
+    info   = discover_ed2k_manager.compare_cache_info()
+    if series is None:
+        return jsonify({"ok": True, "enabled": enabled, "cached": False,
+                        "series": [], "cache_info": info})
+    return jsonify({"ok": True, "enabled": enabled, "cached": True,
+                    "series": series, "cache_info": info})
+
+
+@app.route("/api/ebdz-compare/cache", methods=["DELETE"])
+def api_ebdz_compare_cache_clear():
+    """Supprime le cache de comparaison eBDZ."""
+    discover_ed2k_manager.clear_compare_cache()
+    return jsonify({"ok": True})
+
+
 @app.route("/api/discover-ed2k/cache")
 def api_discover_ed2k_cache():
     """Retourne les résultats ED2K mis en cache (< 24h) ou liste vide."""
@@ -1405,6 +1433,11 @@ def api_discover_ed2k_stream():
 
     mybbuser = config.get("mybbuser", "")
 
+    # Option "Comparaison eBDZ" (Settings > Media Management)
+    compare_enabled = bool(
+        config.load().get("media_management", {}).get("ebdz_compare_enabled", False)
+    )
+
     def generate():
         if not mybbuser:
             yield f"data: {json.dumps({'type': 'error', 'message': 'Cookie ebdz non configuré (Settings > Indexers)'})}\n\n"
@@ -1424,7 +1457,8 @@ def api_discover_ed2k_stream():
 
         yield f"data: {json.dumps({'type': 'start', 'total': total})}\n\n"
 
-        found_series = []
+        found_series   = []
+        compare_series = []
         for i, s in enumerate(series_list):
             if i > 0:
                 time.sleep(delay_ms / 1000)
@@ -1432,18 +1466,40 @@ def api_discover_ed2k_stream():
             yield f"data: {json.dumps({'type': 'progress', 'current': i + 1, 'total': total, 'series_name': s['series_name']})}\n\n"
 
             try:
-                result = discover_ed2k_manager.enrich_with_ed2k(session, s)
+                result = discover_ed2k_manager.enrich_with_ed2k(
+                    session, s, include_ebdz_missing=compare_enabled)
             except Exception as e:
                 yield f"data: {json.dumps({'type': 'progress', 'current': i + 1, 'total': total, 'series_name': s['series_name'], 'error': str(e)})}\n\n"
                 continue
 
-            if result:
+            if not result:
+                continue
+
+            # Découverte classique : tomes manquants / upgrades
+            if result.get("missing_count") or result.get("upgrade_count"):
                 found_series.append(result)
                 yield f"data: {json.dumps({'type': 'series', 'series': result})}\n\n"
 
-        discover_ed2k_manager.save_cache(found_series)
+            # Comparaison inverse : tomes possédés absents d'eBDZ
+            if compare_enabled and result.get("ebdz_missing_count"):
+                compare_series.append({
+                    "series_name":        result["series_name"],
+                    "series_slug":        result.get("series_slug", ""),
+                    "lib_id":             result.get("lib_id", ""),
+                    "lib_name":           result.get("lib_name", ""),
+                    "owned_count":        result.get("owned_count", 0),
+                    "thread_url":         result.get("thread_url", ""),
+                    "thread_name":        result.get("thread_name", ""),
+                    "no_thread":          result.get("no_thread", False),
+                    "ebdz_missing_items": result.get("ebdz_missing_items", []),
+                    "ebdz_missing_count": result.get("ebdz_missing_count", 0),
+                })
 
-        yield f"data: {json.dumps({'type': 'done', 'total_found': len(found_series), 'total_scanned': total})}\n\n"
+        discover_ed2k_manager.save_cache(found_series)
+        if compare_enabled:
+            discover_ed2k_manager.save_compare_cache(compare_series)
+
+        yield f"data: {json.dumps({'type': 'done', 'total_found': len(found_series), 'total_scanned': total, 'compare_found': len(compare_series)})}\n\n"
 
     return Response(
         generate(),
@@ -1737,7 +1793,7 @@ def api_repair_cbz(series_slug):
     errors   = []
     for fp in to_fix:
         result = _mm.repair_fake_cbz(fp)
-        if result.get("ok") and result.get("message") != "Déjà un ZIP valide":
+        if result.get("repaired"):
             repaired += 1
             # Invalide le cache cover
             import image_cache as _ic
@@ -1751,6 +1807,106 @@ def api_repair_cbz(series_slug):
         "errors":  errors,
         "message": f"{repaired} fichier(s) réparé(s)" + (f", {len(errors)} erreur(s)" if errors else ""),
     })
+
+
+# ════════════════════════════════════════════════════════
+# RÉPARATION CBZ — SCAN COMPLET DE LA COLLECTION
+# ════════════════════════════════════════════════════════
+
+_repair_task = {
+    "running": False, "dry_run": False, "label": "",
+    "current": "", "done": 0, "total": 0,
+    "detected": 0, "repaired": 0, "errors": [], "files": [],
+}
+_repair_lock = threading.Lock()
+
+
+def _set_repair(**kw):
+    with _repair_lock:
+        _repair_task.update(kw)
+
+
+@app.route("/api/media/repair-scan", methods=["POST"])
+def api_repair_scan():
+    """
+    Lance un scan de réparation CBZ (RAR renommés) sur toute la collection.
+    Body : {"dry_run": bool} — dry_run=true liste sans modifier.
+    Logique du script Réparation_CBZ/repair_cbz_library.py.
+    """
+    d       = request.json or {}
+    dry_run = bool(d.get("dry_run", False))
+
+    with _repair_lock:
+        if _repair_task["running"]:
+            return jsonify({"ok": False, "message": "Un scan de réparation est déjà en cours"})
+        _repair_task.update(
+            running=True, dry_run=dry_run, label="Analyse de la collection…",
+            current="", done=0, total=0, detected=0, repaired=0, errors=[], files=[],
+        )
+
+    def _run():
+        import media_manager as _mm
+        import image_cache as _ic
+        try:
+            # Phase 1 : détection dans toutes les librairies
+            fakes = []
+            for lib in lib_mgr.get_libraries():
+                if not os.path.isdir(lib["path"]):
+                    continue
+                for f in _mm.scan_library_for_fake_cbz(lib["path"]):
+                    f["lib_name"] = lib["name"]
+                    fakes.append(f)
+
+            _set_repair(
+                detected=len(fakes), total=len(fakes),
+                files=[{"series": f["series"], "filename": f["filename"],
+                        "lib_name": f.get("lib_name", ""), "status": "detected"} for f in fakes],
+            )
+
+            if dry_run:
+                _set_repair(running=False,
+                            label=f"Analyse terminée — {len(fakes)} fichier(s) à réparer")
+                return
+
+            # Phase 2 : réparation
+            repaired = 0
+            errors   = []
+            for i, f in enumerate(fakes):
+                _set_repair(current=f"{f['series']} / {f['filename']}", done=i)
+                result = _mm.repair_fake_cbz(f["path"])
+                with _repair_lock:
+                    entry = _repair_task["files"][i]
+                    if result.get("repaired"):
+                        repaired += 1
+                        entry["status"] = "repaired"
+                        # Invalide le cache cover de la série
+                        sid = lib_mgr._series_id(os.path.dirname(f["path"]))
+                        try:
+                            _ic.clear_cache(sid)
+                        except Exception:
+                            pass
+                    else:
+                        entry["status"]  = "error"
+                        entry["message"] = result.get("message", "")
+                        errors.append(f"{f['filename']}: {result.get('message')}")
+                    _repair_task.update(repaired=repaired, errors=errors, done=i + 1)
+
+            _set_repair(
+                running=False, current="",
+                label=f"Terminé — {repaired} fichier(s) réparé(s)"
+                      + (f", {len(errors)} erreur(s)" if errors else ""),
+            )
+        except Exception as e:
+            _set_repair(running=False, label=f"Erreur : {e}")
+
+    threading.Thread(target=_run, daemon=True).start()
+    return jsonify({"ok": True})
+
+
+@app.route("/api/media/repair-status")
+def api_repair_status():
+    with _repair_lock:
+        return jsonify(dict(_repair_task))
 
 
 # ════════════════════════════════════════════════════════

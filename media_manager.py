@@ -246,8 +246,16 @@ def convert_pdf_to_cbz(pdf_path: str) -> str | None:
 
 
 # ════════════════════════════════════════════════════════
-# DÉTECTION ET RÉPARATION DES FAUX CBZ (CBR renommés)
+# DÉTECTION ET RÉPARATION DES FAUX CBZ (RAR renommés)
+# Logique du script Réparation_CBZ (repair_cbz.py) :
+#   1. Détection par magic bytes "Rar!"
+#   2. Extraction unrar vers un dossier temporaire
+#   3. Recompression en ZIP (STORED, sans compression) — nom de fichier conservé
+#   4. Remplacement atomique via un .cbz.tmp
 # ════════════════════════════════════════════════════════
+
+RAR_MAGIC = b"Rar!"
+
 
 def is_valid_zip(file_path: str) -> bool:
     """Vérifie qu'un fichier CBZ est bien un ZIP valide (magic bytes PK\\x03\\x04)."""
@@ -259,49 +267,88 @@ def is_valid_zip(file_path: str) -> bool:
         return False
 
 
+def is_rar_file(file_path: str) -> bool:
+    """Vérifie qu'un fichier est une archive RAR (magic bytes Rar!)."""
+    try:
+        with open(file_path, "rb") as f:
+            return f.read(4) == RAR_MAGIC
+    except OSError:
+        return False
+
+
+def _extract_rar_to(rar_path: str, dest_dir: str) -> tuple[bool, str]:
+    """Extrait une archive RAR vers dest_dir via unrar (fallback 7z)."""
+    if _has_tool("unrar"):
+        r = subprocess.run(
+            ["unrar", "x", "-y", rar_path, dest_dir + os.sep],
+            capture_output=True, text=True,
+        )
+        if r.returncode == 0:
+            return True, ""
+        err = (r.stderr or "").strip()
+    else:
+        err = "unrar indisponible"
+    if _has_tool("7z"):
+        r = subprocess.run(
+            ["7z", "x", rar_path, f"-o{dest_dir}", "-y"],
+            capture_output=True, text=True,
+        )
+        if r.returncode == 0:
+            return True, ""
+    return False, err or "unrar/7z indisponibles"
+
+
 def repair_fake_cbz(file_path: str) -> dict:
     """
-    Répare un .cbz qui est en réalité un fichier RAR renommé.
-    Renomme temporairement en .cbr, convertit via convert_cbr_to_cbz,
-    supprime le .cbr temporaire si succès.
-    Retourne {"ok", "message", "new_path"}.
+    Répare un .cbz qui est en réalité une archive RAR renommée.
+    Extrait le contenu RAR et le recompresse en ZIP (STORED),
+    en conservant le nom de fichier (remplacement atomique).
+    Retourne {"ok", "repaired", "message", "new_path"}.
     """
     if not os.path.isfile(file_path):
-        return {"ok": False, "message": f"Fichier introuvable : {file_path}"}
+        return {"ok": False, "repaired": False, "message": f"Fichier introuvable : {file_path}"}
 
-    if is_valid_zip(file_path):
-        return {"ok": True, "message": "Déjà un ZIP valide", "new_path": file_path}
+    if not is_rar_file(file_path):
+        if is_valid_zip(file_path):
+            return {"ok": True, "repaired": False,
+                    "message": "Déjà un ZIP valide", "new_path": file_path}
+        return {"ok": False, "repaired": False,
+                "message": "Ni ZIP ni RAR — format non réparable"}
 
-    base    = os.path.splitext(file_path)[0]
-    cbr_tmp = base + "_repair_tmp.cbr"
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        ok, err = _extract_rar_to(file_path, tmp_dir)
+        if not ok:
+            return {"ok": False, "repaired": False,
+                    "message": f"Extraction échouée : {err}"}
 
-    try:
-        os.rename(file_path, cbr_tmp)
-        result = convert_cbr_to_cbz(cbr_tmp)
+        files_to_add = sorted(
+            os.path.join(root, fn)
+            for root, _, fns in os.walk(tmp_dir)
+            for fn in fns
+        )
+        if not files_to_add:
+            return {"ok": False, "repaired": False, "message": "Aucun fichier extrait"}
 
-        if result:
-            # convert_cbr_to_cbz crée base_repair_tmp.cbz — on renomme en .cbz original
-            expected_cbz = base + "_repair_tmp.cbz"
-            final_cbz    = file_path  # remet le .cbz original
-            if os.path.exists(expected_cbz):
-                os.rename(expected_cbz, final_cbz)
-            config.add_log(f"[Repair] {os.path.basename(file_path)} : CBR→CBZ réparé", "info")
-            return {"ok": True, "message": "Réparé ✓", "new_path": final_cbz}
-        else:
-            # Échec → remet le fichier original
-            if os.path.exists(cbr_tmp):
-                os.rename(cbr_tmp, file_path)
-            return {"ok": False, "message": "Conversion CBR→CBZ échouée (unrar/7z disponible ?)"}
-    except Exception as e:
-        if os.path.exists(cbr_tmp):
-            try: os.rename(cbr_tmp, file_path)
-            except Exception: pass
-        return {"ok": False, "message": str(e)}
+        tmp_zip = file_path + ".tmp"
+        try:
+            with zipfile.ZipFile(tmp_zip, "w", compression=zipfile.ZIP_STORED) as zf:
+                for f in files_to_add:
+                    zf.write(f, os.path.relpath(f, tmp_dir))
+            os.replace(tmp_zip, file_path)
+            config.add_log(f"[Repair] {os.path.basename(file_path)} : RAR→ZIP réparé", "info")
+            return {"ok": True, "repaired": True, "message": "Réparé ✓", "new_path": file_path}
+        except Exception as e:
+            try:
+                os.remove(tmp_zip)
+            except OSError:
+                pass
+            return {"ok": False, "repaired": False, "message": f"Création ZIP échouée : {e}"}
 
 
 def scan_series_for_fake_cbz(series_dir: str) -> list:
     """
-    Scanne un dossier de série et retourne la liste des faux CBZ.
+    Scanne un dossier de série et retourne la liste des CBZ,
+    avec valid=False pour les archives RAR renommées.
     Retourne [{filename, path, valid}].
     """
     results = []
@@ -310,7 +357,29 @@ def scan_series_for_fake_cbz(series_dir: str) -> list:
     for fn in sorted(os.listdir(series_dir)):
         if not fn.lower().endswith(".cbz"):
             continue
-        fp    = os.path.join(series_dir, fn)
-        valid = is_valid_zip(fp)
-        results.append({"filename": fn, "path": fp, "valid": valid})
+        fp = os.path.join(series_dir, fn)
+        results.append({"filename": fn, "path": fp, "valid": not is_rar_file(fp)})
     return results
+
+
+def scan_library_for_fake_cbz(library_root: str) -> list:
+    """
+    Scanne une bibliothèque (un dossier par série) et retourne les faux CBZ.
+    Logique du script repair_cbz_library.py.
+    Retourne [{series, filename, path}].
+    """
+    fakes = []
+    if not os.path.isdir(library_root):
+        return fakes
+    for entry in sorted(os.listdir(library_root)):
+        series_dir = os.path.join(library_root, entry)
+        if not os.path.isdir(series_dir):
+            continue
+        for root, _, fns in os.walk(series_dir):
+            for fn in sorted(fns):
+                if not fn.lower().endswith(".cbz"):
+                    continue
+                fp = os.path.join(root, fn)
+                if is_rar_file(fp):
+                    fakes.append({"series": entry, "filename": fn, "path": fp})
+    return fakes

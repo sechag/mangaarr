@@ -377,6 +377,7 @@ async function saveMediaSettings() {
     auto_convert_pdf:         document.getElementById('toggle-pdf').checked,
     auto_replace:             document.getElementById('toggle-replace').checked,
     force_organize_enabled:   forceOrg,
+    ebdz_compare_enabled:     document.getElementById('toggle-ebdz-compare').checked,
     rename_format:            fmtEl ? parseInt(fmtEl.value) : 1,
   };
   _forceOrganizeEnabled = forceOrg;
@@ -391,6 +392,88 @@ async function saveDownloadDir() {
 }
 
 // ══════════════════════════════════════════════════════════
+// RÉPARATION CBZ — SCAN COMPLET DE LA COLLECTION
+// ══════════════════════════════════════════════════════════
+
+let _repairPollTimer = null;
+
+async function startRepairScan(dryRun) {
+  if (!dryRun && !confirm(
+    'Réparer toute la collection ?\n\n' +
+    'Tous les .cbz qui sont des archives RAR renommées seront reconvertis en ZIP.\n' +
+    'Les fichiers valides ne sont pas touchés.'
+  )) return;
+
+  const d = await api('/media/repair-scan', 'POST', { dry_run: dryRun });
+  if (!d.ok) { showToast(d.message || 'Erreur au lancement du scan'); return; }
+
+  document.getElementById('btn-repair-dry').disabled = true;
+  document.getElementById('btn-repair-run').disabled = true;
+  document.getElementById('repair-progress').style.display = '';
+  document.getElementById('repair-result').style.display = 'none';
+  document.getElementById('repair-progress-fill').style.width = '2%';
+  document.getElementById('repair-progress-label').textContent = 'Analyse de la collection…';
+
+  clearInterval(_repairPollTimer);
+  _repairPollTimer = setInterval(pollRepairStatus, 1000);
+}
+
+async function pollRepairStatus() {
+  const s = await api('/media/repair-status');
+  const fill  = document.getElementById('repair-progress-fill');
+  const label = document.getElementById('repair-progress-label');
+
+  if (s.running) {
+    const pct = s.total ? Math.round((s.done / s.total) * 100) : 5;
+    fill.style.width = Math.max(pct, 5) + '%';
+    label.textContent = s.total
+      ? `${s.done} / ${s.total} — ${s.current || s.label || ''}`
+      : (s.label || 'Analyse…');
+    return;
+  }
+
+  // Terminé
+  clearInterval(_repairPollTimer);
+  _repairPollTimer = null;
+  fill.style.width = '100%';
+  label.textContent = s.label || 'Terminé';
+  document.getElementById('btn-repair-dry').disabled = false;
+  document.getElementById('btn-repair-run').disabled = false;
+  setTimeout(() => { document.getElementById('repair-progress').style.display = 'none'; }, 3000);
+
+  renderRepairResult(s);
+}
+
+function renderRepairResult(s) {
+  const box     = document.getElementById('repair-result');
+  const summary = document.getElementById('repair-result-summary');
+  const details = document.getElementById('repair-result-details');
+  box.style.display = '';
+
+  if (!s.detected) {
+    summary.textContent = '✓ Aucun faux CBZ (RAR renommé) détecté — toute la collection est saine.';
+    summary.style.color = 'var(--success)';
+    details.innerHTML = '';
+    return;
+  }
+
+  summary.style.color = '';
+  summary.textContent = s.dry_run
+    ? `${s.detected} fichier(s) à réparer (analyse seule — rien n'a été modifié)`
+    : `${s.repaired} / ${s.detected} fichier(s) réparé(s)` +
+      (s.errors?.length ? ` — ${s.errors.length} erreur(s)` : '');
+
+  const icon = { detected: '🔎', repaired: '✅', error: '❌' };
+  details.innerHTML = (s.files || []).map(f => `
+    <div style="padding:4px 16px;display:flex;gap:8px;align-items:baseline">
+      <span>${icon[f.status] || '•'}</span>
+      <span style="color:var(--text-dim)">${esc(f.series)} /</span>
+      <span style="word-break:break-all">${esc(f.filename)}</span>
+      ${f.message ? `<span style="color:var(--danger)">— ${esc(f.message)}</span>` : ''}
+    </div>`).join('');
+}
+
+// ══════════════════════════════════════════════════════════
 // RENOMMAGE BIBLIOTHÈQUE
 // ══════════════════════════════════════════════════════════
 
@@ -402,6 +485,7 @@ async function loadMediaSettings() {
   document.getElementById('toggle-pdf').checked            = mm.auto_convert_pdf       ?? true;
   document.getElementById('toggle-replace').checked        = mm.auto_replace           ?? true;
   document.getElementById('toggle-force-organize').checked = mm.force_organize_enabled ?? false;
+  document.getElementById('toggle-ebdz-compare').checked   = mm.ebdz_compare_enabled   ?? false;
   _forceOrganizeEnabled = mm.force_organize_enabled ?? false;
   const fmt   = String(mm.rename_format ?? 1);
   const fmtEl = document.querySelector(`input[name="rename-format"][value="${fmt}"]`);

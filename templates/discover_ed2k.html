@@ -69,6 +69,13 @@
   margin: 18px 0 8px; display: flex; align-items: center; gap: 8px;
 }
 .group-title .count { color: var(--text-head); font-weight: 700; }
+.group-check-all {
+  margin-left: auto; display: flex; align-items: center; gap: 6px;
+  font-size: 11px; font-weight: 500; color: var(--text-dim); text-transform: none;
+  letter-spacing: 0; cursor: pointer; user-select: none;
+}
+.group-check-all input { accent-color: var(--accent); cursor: pointer; }
+.group-check-all:hover { color: var(--accent); }
 
 /* ── Item cards ── */
 .release-card {
@@ -145,6 +152,10 @@
     <a class="nav-item active" href="/discover-ed2k">
       <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M12.586 4.586a2 2 0 112.828 2.828l-3 3a2 2 0 01-2.828 0 1 1 0 00-1.414 1.414 4 4 0 005.656 0l3-3a4 4 0 00-5.656-5.656l-1.5 1.5a1 1 0 101.414 1.414l1.5-1.5zm-5 5a2 2 0 012.828 0 1 1 0 001.414-1.414 4 4 0 00-5.656 0l-3 3a4 4 0 105.656 5.656l1.5-1.5a1 1 0 10-1.414-1.414l-1.5 1.5a2 2 0 11-2.828-2.828l3-3z" clip-rule="evenodd"/></svg>
       Découverte ED2K
+    </a>
+    <a class="nav-item" href="/ebdz-compare">
+      <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M3 3a1 1 0 011 1v12h12a1 1 0 110 2H3a1 1 0 01-1-1V4a1 1 0 011-1zm10.293 2.293a1 1 0 011.414 0l3 3a1 1 0 01-1.414 1.414L15 8.414V13a1 1 0 11-2 0V8.414l-1.293 1.293a1 1 0 01-1.414-1.414l3-3zM7 10a1 1 0 011 1v2a1 1 0 11-2 0v-2a1 1 0 011-1zm3-3a1 1 0 011 1v5a1 1 0 11-2 0V8a1 1 0 011-1z" clip-rule="evenodd"/></svg>
+      Comparaison eBDZ
     </a>
     <div class="nav-section-label">Settings</div>
     <a class="nav-item" href="/">
@@ -462,6 +473,7 @@ function renderDetail() {
       <div class="releases-title">
         ${esc(s.series_name)}
         ${s.thread_url ? `<a href="${esc(s.thread_url)}" target="_blank" title="Thread forum ebdz">🔗 Thread ebdz</a>` : ''}
+        ${s.series_slug ? `<a href="/series/${esc(s.series_slug)}" title="Ouvrir la page de la série dans ma collection">📚 Ma collection</a>` : ''}
       </div>
     </div>
     <div class="owned-bar">
@@ -475,15 +487,26 @@ function renderDetail() {
   }
 
   if (s.missing_items && s.missing_items.length) {
-    html += `<div class="group-title">📥 Manquants <span class="count">(${s.missing_items.length})</span></div>`;
+    html += `<div class="group-title">📥 Manquants <span class="count">(${s.missing_items.length})</span>
+      <label class="group-check-all"><input type="checkbox" id="cb-all-missing" onchange="toggleGroup('missing', this.checked)"> Tout cocher</label>
+    </div>`;
     html += s.missing_items.map((it, i) => renderItemCard(it, 'missing', i)).join('');
   }
   if (s.upgrade_items && s.upgrade_items.length) {
-    html += `<div class="group-title">⬆ Upgrades <span class="count">(${s.upgrade_items.length})</span></div>`;
+    html += `<div class="group-title">⬆ Upgrades <span class="count">(${s.upgrade_items.length})</span>
+      <label class="group-check-all"><input type="checkbox" id="cb-all-upgrade" onchange="toggleGroup('upgrade', this.checked)"> Tout cocher</label>
+    </div>`;
     html += s.upgrade_items.map((it, i) => renderItemCard(it, 'upgrade', i)).join('');
   }
 
   panel.innerHTML = html;
+  updateDlBar();
+}
+
+// ── Cocher/décocher tous les tomes d'un groupe ────────────────────────
+function toggleGroup(group, checked) {
+  document.querySelectorAll(`.release-cb[data-group="${group}"]`)
+    .forEach(cb => { cb.checked = checked; });
   updateDlBar();
 }
 
@@ -494,6 +517,14 @@ function updateDlBar() {
   bar.classList.toggle('visible', checked.length > 0);
   const cnt = document.getElementById('dl-count');
   if (cnt) cnt.textContent = `${checked.length} lien(s) sélectionné(s)`;
+  // Synchronise l'état des cases "Tout cocher" de chaque groupe
+  for (const group of ['missing', 'upgrade']) {
+    const all   = document.querySelectorAll(`.release-cb[data-group="${group}"]`);
+    const cbAll = document.getElementById(`cb-all-${group}`);
+    if (cbAll && all.length) {
+      cbAll.checked = [...all].every(cb => cb.checked);
+    }
+  }
   const btn = document.getElementById('btn-send');
   if (btn) {
     btn.disabled = !_amuleOk;
