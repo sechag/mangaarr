@@ -214,7 +214,7 @@ def detect_missing_from_disk(root_dir: str, progress_cb=None, serie_filter: str 
 
     # Ajoute TOUS les items en une seule écriture disque
     total_added = queue_manager.add_to_queue(all_new_items)
-    config.add_log(f"[Scan] {total_added} tome(s) ajouté(s) à la queue sur {total} séries", "info")
+    config.add_log(f"[Scan] {total_added['added']} tome(s) ajouté(s) à la queue sur {total} séries", "info")
 
     return {
         "ok":              True,

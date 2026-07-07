@@ -328,6 +328,11 @@ def scrape_thread_ed2k(session, thread_url):
 
 def parse_ed2k(ed2k_url):
     import renamer as _r, html as _html
+    # Les liens scrapés depuis le HTML contiennent des entités (&amp; &quot; …).
+    # On les décode dans l'URL AVANT tout : sinon aMule reçoit un lien avec
+    # "&amp;" littéral et nomme le fichier "X &amp; Y.cbz" alors que la queue
+    # attend "X & Y.cbz" → le tome reste "en attente" pour toujours.
+    ed2k_url = _html.unescape(ed2k_url)
     m = re.search(r"ed2k://\|file\|([^|]+)\|(\d+)\|([A-Fa-f0-9]+)\|", ed2k_url, re.IGNORECASE)
     if m:
         filename = _html.unescape(unquote(m.group(1)))

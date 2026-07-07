@@ -1245,20 +1245,28 @@ def api_amule_add_links():
         return jsonify({"ok": False, "message": "Aucun lien ed2k valide"})
 
     # Ajout à la queue MangaArr
-    r    = queue_manager.add_to_queue(items)
-    urls = [i["url"] for i in items]
+    r = queue_manager.add_to_queue(items)
 
-    # Envoi à aMule en arrière-plan, un par un
-    def _send():
-        amule_client.add_ed2k_batch(client, urls)
-    threading.Thread(target=_send, daemon=True).start()
+    # N'envoie à aMule QUE les items réellement ajoutés à la queue :
+    # un doublon ignoré serait téléchargé sans jamais être surveillé
+    # (invisible dans Queue/aMule et jamais organisé).
+    urls = [i["url"] for i in r["added_items"]]
+
+    if urls:
+        def _send():
+            amule_client.add_ed2k_batch(client, urls)
+        threading.Thread(target=_send, daemon=True).start()
+
+    msg = f"{len(urls)} lien(s) envoyé(s) à aMule"
+    if r["skipped"]:
+        msg += f", {r['skipped']} doublon(s) déjà en queue (non renvoyé(s))"
 
     return jsonify({
         "ok":      True,
         "queued":  len(urls),
         "added":   r["added"],
         "skipped": r["skipped"],
-        "message": f"{len(urls)} lien(s) envoyé(s) à aMule",
+        "message": msg,
     })
 
 
@@ -2068,16 +2076,19 @@ def api_add_tomes_to_queue(series_slug):
     skipped = r["skipped"]
     msg     = f"{added} tome(s) ajouté(s) à la queue"
     if skipped:
-        msg += f", {skipped} doublon(s) ignoré(s)"
+        msg += f", {skipped} doublon(s) ignoré(s) (non renvoyé(s) à aMule)"
 
     if delivery == "amule":
         amule_cl = _get_amule_client()
         if not amule_cl:
             return jsonify({"ok": False, "message": "Aucun client aMule configuré"})
-        urls = [i["url"] for i in items if i.get("url", "").startswith("ed2k://")]
-        def _send():
-            amule_client.add_ed2k_batch(amule_cl, urls)
-        threading.Thread(target=_send, daemon=True).start()
+        # N'envoie à aMule QUE les items réellement ajoutés à la queue
+        # (un doublon ignoré serait téléchargé sans être surveillé)
+        urls = [i["url"] for i in r["added_items"] if i.get("url", "").startswith("ed2k://")]
+        if urls:
+            def _send():
+                amule_client.add_ed2k_batch(amule_cl, urls)
+            threading.Thread(target=_send, daemon=True).start()
         return jsonify({"ok": True, "added": added, "skipped": skipped,
                         "delivery": "amule", "message": msg})
 
@@ -3383,12 +3394,20 @@ def _do_scan_incoming() -> dict:
     # UN SEUL niveau de correspondance : le nom de fichier doit être IDENTIQUE
     # à celui annoncé dans la queue (insensible à la casse uniquement).
     # Aucun fuzzy, aucune normalisation — si le fichier exact n'est pas là, on attend.
+    import html as _html
     incoming_exact = {}  # nom_lowercase → full_path
 
     for fn in os.listdir(incoming_dir):
         if not fn.lower().endswith((".cbz", ".cbr", ".pdf", ".zip")):
             continue
-        incoming_exact[fn.lower()] = os.path.join(incoming_dir, fn)
+        fp = os.path.join(incoming_dir, fn)
+        incoming_exact[fn.lower()] = fp
+        # Rattrapage : fichiers téléchargés avant v1.1.9 avec des entités HTML
+        # littérales dans le nom ("X &amp; Y.cbz" au lieu de "X & Y.cbz") —
+        # on les indexe aussi sous leur nom décodé pour qu'ils matchent la queue.
+        fn_unescaped = _html.unescape(fn).lower()
+        if fn_unescaped != fn.lower():
+            incoming_exact.setdefault(fn_unescaped, fp)
 
     if not incoming_exact:
         return {"ok": True, "message": "Dossier vide", "updated": 0, "errors": []}

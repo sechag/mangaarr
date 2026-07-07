@@ -70,11 +70,14 @@ def get_queue_stats() -> dict:
 def add_to_queue(items: list) -> dict:
     """
     Ajoute des items à la queue en une seule écriture disque.
-    Retourne {"added": int, "skipped": int}.
+    Retourne {"added": int, "skipped": int, "added_items": [...], "skipped_items": [...]}.
     Doublons détectés par : filehash OU (series_name + tome_number) si item pending.
+    added_items permet à l'appelant de n'envoyer au client de téléchargement
+    QUE les items réellement suivis par la queue (sinon un doublon ignoré serait
+    téléchargé par aMule sans jamais être surveillé).
     """
     if not items:
-        return {"added": 0, "skipped": 0}
+        return {"added": 0, "skipped": 0, "added_items": [], "skipped_items": []}
     with _queue_lock:
         existing        = _load()
         existing_hashes = {i.get("filehash", "") for i in existing if i.get("filehash")}
@@ -84,19 +87,19 @@ def add_to_queue(items: list) -> dict:
             for i in existing
             if i.get("status") not in ("done",) and i.get("tome_number")
         }
-        added   = 0
-        skipped = 0
-        now     = datetime.now().isoformat(timespec="seconds")
+        added_items   = []
+        skipped_items = []
+        now           = datetime.now().isoformat(timespec="seconds")
         for item in items:
             h = item.get("filehash", "")
             if h and h in existing_hashes:
-                skipped += 1
+                skipped_items.append(item)
                 continue
             # Anti-doublon par (série, tome) pour les items en attente
             sn  = _norm_key(item.get("series_name", ""))
             tn  = str(item.get("tome_number", "")).strip()
             if sn and tn and (sn, tn) in pending_keys:
-                skipped += 1
+                skipped_items.append(item)
                 continue
             item.setdefault("status",   "pending")
             item.setdefault("added_at", now)
@@ -105,10 +108,15 @@ def add_to_queue(items: list) -> dict:
                 existing_hashes.add(h)
             if sn and tn:
                 pending_keys.add((sn, tn))
-            added += 1
-        if added:
+            added_items.append(item)
+        if added_items:
             _save(existing)
-    return {"added": added, "skipped": skipped}
+    return {
+        "added":         len(added_items),
+        "skipped":       len(skipped_items),
+        "added_items":   added_items,
+        "skipped_items": skipped_items,
+    }
 
 
 def _norm_key(s: str) -> str:
