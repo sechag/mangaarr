@@ -2250,12 +2250,83 @@ function showSeriesInfo(info) {
                 style="background:none;border:none;color:var(--text-dim);font-size:18px;cursor:pointer">✕</button>
       </div>
       ${html}
+      <div class="series-migrate-box" style="margin-top:14px;padding:10px;border:1px solid var(--border);border-radius:8px">
+        <div style="font-size:12px;font-weight:600;margin-bottom:8px">⇄ Migrer vers une autre librairie</div>
+        <div style="display:flex;gap:8px;align-items:center">
+          <select class="select-input migrate-target" style="flex:1"><option value="">Chargement…</option></select>
+          <button class="btn btn-sm btn-primary migrate-go" disabled>Migrer</button>
+        </div>
+        <div class="status-msg migrate-status" style="margin-top:8px;font-size:11px;word-break:break-all"></div>
+      </div>
       <div style="margin-top:14px;text-align:right">
         <a href="/series/${esc(info.slug)}" class="btn btn-sm btn-secondary">Voir la série →</a>
       </div>
     </div>`;
-  modal.addEventListener('click', e => { if (e.target === modal) modal.remove(); });
+  let busy = false;
+  modal.addEventListener('click', e => { if (e.target === modal && !busy) modal.remove(); });
   document.body.appendChild(modal);
+
+  // ── Migration ──
+  const curLib = _addTargetLibId();
+  const sel    = modal.querySelector('.migrate-target');
+  const goBtn  = modal.querySelector('.migrate-go');
+  const status = modal.querySelector('.migrate-status');
+  api('/libraries').then(d => {
+    const libs = (d.libraries || []).filter(l => l.id !== curLib);
+    if (!libs.length) {
+      sel.innerHTML = '<option value="">Aucune autre librairie</option>';
+      return;
+    }
+    sel.innerHTML = libs.map(l => `<option value="${esc(l.id)}">${esc(l.name)}</option>`).join('');
+    goBtn.disabled = false;
+  });
+  goBtn.addEventListener('click', async () => {
+    const libId = sel.value;
+    if (!libId || busy) return;
+    const libName = sel.options[sel.selectedIndex].textContent;
+    // Confirmation intégrée (deux clics) plutôt qu'un confirm() bloquant
+    if (goBtn.dataset.confirm !== '1') {
+      goBtn.dataset.confirm = '1';
+      goBtn.textContent = `Confirmer → ${libName}`;
+      status.textContent = `Le dossier « ${info.name} » sera déplacé dans la librairie ${libName}.`;
+      status.className = 'status-msg migrate-status';
+      return;
+    }
+    busy = true;
+    goBtn.disabled = true; sel.disabled = true;
+    goBtn.textContent = 'Migration…';
+    const d = await api(`/collection/series/${info.slug}/migrate`, 'POST', { lib_id: libId });
+    if (!d.ok) {
+      busy = false;
+      goBtn.disabled = false; sel.disabled = false;
+      goBtn.dataset.confirm = ''; goBtn.textContent = 'Migrer';
+      status.textContent = d.message || 'Erreur';
+      status.className = 'status-msg migrate-status error';
+      return;
+    }
+    status.textContent = d.message || 'Migration en cours…';
+    while (true) {
+      await new Promise(r => setTimeout(r, 800));
+      const st = await api('/collection/migrate-status');
+      if (st.total) status.textContent = `Copie : ${st.done} / ${st.total} fichier(s)`;
+      if (st.ok === false || st.running) continue;
+      busy = false;
+      const res = st.result || {};
+      if (res.ok) {
+        status.textContent = (res.message || 'Migration terminée') + ' ✓';
+        status.className = 'status-msg migrate-status ok';
+        goBtn.textContent = '✓ Migrée';
+        loadSeries(curLib);   // la série disparaît de cette librairie
+        setTimeout(() => modal.remove(), 1500);
+      } else {
+        goBtn.disabled = false; sel.disabled = false;
+        goBtn.dataset.confirm = ''; goBtn.textContent = 'Migrer';
+        status.textContent = res.message || 'Erreur pendant la migration';
+        status.className = 'status-msg migrate-status error';
+      }
+      return;
+    }
+  });
 }
 
 // ══════════════════════════════════════════════════════════

@@ -57,6 +57,15 @@ def set_series_meta(library_id, series_id, meta):
         _mem_cache.setdefault(library_id, {})[series_id] = meta
     threading.Thread(target=_save_disk, args=(_mem_cache.copy(),), daemon=True).start()
 
+def move_series_meta(old_lib, old_sid, new_lib, new_sid, keep=True):
+    """Déplace (ou supprime si keep=False) les métadonnées d'une série migrée."""
+    with _mem_lock:
+        meta = _mem_cache.get(old_lib, {}).pop(old_sid, None)
+        if meta is not None and keep:
+            _mem_cache.setdefault(new_lib, {})[new_sid] = meta
+    threading.Thread(target=_save_disk, args=(_mem_cache.copy(),), daemon=True).start()
+    return meta
+
 def get_library_cache(library_id):
     with _mem_lock:
         return dict(_mem_cache.get(library_id, {}))

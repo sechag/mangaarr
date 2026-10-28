@@ -113,6 +113,8 @@ function padNum(n) {
   return isNaN(num) ? String(n) : String(num).padStart(2, '0');
 }
 
+let _seriesLibId = '', _seriesLibName = '', _seriesDiskPath = '';
+
 async function loadSeries() {
   const data = await apiFetch(`/collection/series/${SERIES_SLUG}`);
 
@@ -124,6 +126,9 @@ async function loadSeries() {
   }
 
   const name       = data.name || '';
+  _seriesLibId     = data.libraryId || '';
+  _seriesLibName   = data.libraryName || '';
+  _seriesDiskPath  = data.diskPath || '';
   const meta       = data.mangadb || {};
   const books      = data.books || [];
   const mangadbTomes = data.mangadbTomes || [];
@@ -237,6 +242,12 @@ async function loadSeries() {
   linksHtml += `<button class="hero-mangadb-btn" id="btn-telegram-search" onclick="openTelegramSearch()" title="Rechercher des fichiers sur Telegram">
     <svg viewBox="0 0 24 24" fill="currentColor" style="width:14px;height:14px"><path d="M12 0C5.373 0 0 5.373 0 12s5.373 12 12 12 12-5.373 12-12S18.627 0 12 0zm5.894 8.221l-1.97 9.28c-.145.658-.537.818-1.084.508l-3-2.21-1.447 1.394c-.16.16-.295.295-.605.295l.213-3.053 5.56-5.023c.242-.213-.054-.333-.373-.12L7.19 13.28l-2.96-.924c-.643-.204-.657-.643.136-.953l11.57-4.461c.537-.194 1.006.131.958.279z"/></svg>
     Telegram
+  </button>`;
+
+  // Bouton migration vers une autre librairie
+  linksHtml += `<button class="hero-mangadb-btn" onclick="openMigrateModal()" title="Déplacer cette série dans une autre librairie">
+    <svg viewBox="0 0 20 20" fill="currentColor" style="width:14px;height:14px"><path d="M8 5a1 1 0 100 2h5.586l-1.293 1.293a1 1 0 001.414 1.414l3-3a1 1 0 000-1.414l-3-3a1 1 0 10-1.414 1.414L13.586 5H8zM12 15a1 1 0 100-2H6.414l1.293-1.293a1 1 0 10-1.414-1.414l-3 3a1 1 0 000 1.414l3 3a1 1 0 001.414-1.414L6.414 15H12z"/></svg>
+    Migrer${_seriesLibName ? ` (${esc(_seriesLibName)})` : ''}
   </button>`;
 
   document.getElementById('hero-links').innerHTML = linksHtml;
@@ -601,6 +612,40 @@ document.getElementById('modal-mangadb').addEventListener('click', e => {
       </button>
     </div>
     <div id="modal-delivery-status" class="status-msg" style="margin-top:12px;text-align:center"></div>
+  </div>
+</div>
+
+<div id="modal-migrate" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:1000;align-items:center;justify-content:center">
+  <div style="background:var(--bg-card);border-radius:12px;width:500px;max-width:95vw;border:1px solid var(--border);padding:24px">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+      <h2 style="margin:0;font-size:15px">⇄ Migrer la série</h2>
+      <button id="btn-migrate-close" onclick="closeMigrateModal()"
+              style="background:none;border:none;color:var(--text-dim);font-size:20px;cursor:pointer">✕</button>
+    </div>
+    <div style="font-size:12px;color:var(--text-dim);margin-bottom:12px;line-height:1.6">
+      Librairie actuelle : <strong id="migrate-current-lib" style="color:var(--text)"></strong><br>
+      Dossier : <span id="migrate-current-path" style="font-family:monospace;color:var(--text);word-break:break-all"></span>
+    </div>
+    <div class="form-row" style="margin-bottom:10px">
+      <label style="font-size:12px">Nouvelle librairie</label>
+      <select id="migrate-target" class="text-input" onchange="updateMigratePreview()"></select>
+    </div>
+    <div id="migrate-preview" style="font-size:12px;color:var(--accent);font-family:monospace;margin-bottom:12px;min-height:18px;word-break:break-all"></div>
+    <div style="font-size:11px;color:var(--text-dim);margin-bottom:14px;line-height:1.5">
+      Le dossier complet de la série (tous ses tomes) sera déplacé dans le dossier de la librairie choisie.
+      Entre deux disques différents, les fichiers sont copiés puis l'original est supprimé une fois la copie vérifiée.
+    </div>
+    <div id="migrate-progress" style="display:none;margin-bottom:12px">
+      <div style="height:6px;background:var(--bg-input);border-radius:3px;overflow:hidden">
+        <div id="migrate-progress-fill" style="height:100%;width:0;background:var(--accent);transition:width .3s"></div>
+      </div>
+      <div id="migrate-progress-label" style="font-size:11px;color:var(--text-dim);margin-top:4px;word-break:break-all"></div>
+    </div>
+    <div id="migrate-status" class="status-msg" style="margin-bottom:10px"></div>
+    <div style="display:flex;gap:8px;justify-content:flex-end">
+      <button id="btn-migrate-cancel" onclick="closeMigrateModal()" class="btn btn-secondary">Annuler</button>
+      <button id="btn-migrate-go" onclick="confirmMigrate()" class="btn btn-primary">Migrer</button>
+    </div>
   </div>
 </div>
 
@@ -1169,6 +1214,110 @@ async function scanAndRepairCbz() {
   if (result.ok && result.repaired > 0) loadSeries(); // Recharge pour voir les covers
 }
 
+
+// ════════════════════════════════
+// MIGRATION VERS UNE AUTRE LIBRAIRIE
+// ════════════════════════════════
+let _migrateLibs = [];
+let _migrating   = false;
+
+async function openMigrateModal() {
+  const modal = document.getElementById('modal-migrate');
+  document.getElementById('migrate-current-lib').textContent  = _seriesLibName || '—';
+  document.getElementById('migrate-current-path').textContent = _seriesDiskPath || '—';
+  document.getElementById('migrate-status').textContent = '';
+  document.getElementById('migrate-status').className  = 'status-msg';
+  document.getElementById('migrate-progress').style.display = 'none';
+  const sel = document.getElementById('migrate-target');
+  sel.innerHTML = '<option value="">Chargement…</option>';
+  modal.style.display = 'flex';
+
+  const d = await apiFetch('/libraries');
+  _migrateLibs = (d.libraries || []).filter(l => l.id !== _seriesLibId);
+  if (!_migrateLibs.length) {
+    sel.innerHTML = '<option value="">Aucune autre librairie configurée</option>';
+    document.getElementById('btn-migrate-go').disabled = true;
+  } else {
+    sel.innerHTML = _migrateLibs.map(l => `<option value="${esc(l.id)}">${esc(l.name)}</option>`).join('');
+    document.getElementById('btn-migrate-go').disabled = false;
+  }
+  updateMigratePreview();
+}
+
+function closeMigrateModal() {
+  if (_migrating) return;   // pas de fermeture pendant le déplacement
+  document.getElementById('modal-migrate').style.display = 'none';
+}
+
+function updateMigratePreview() {
+  const id  = document.getElementById('migrate-target').value;
+  const lib = _migrateLibs.find(l => l.id === id);
+  const name = document.getElementById('hero-title').textContent || '';
+  document.getElementById('migrate-preview').textContent =
+    lib ? `→ ${lib.path.replace(/[\\/]+$/, '')}/${name}` : '';
+}
+
+async function confirmMigrate() {
+  const libId  = document.getElementById('migrate-target').value;
+  const status = document.getElementById('migrate-status');
+  const goBtn  = document.getElementById('btn-migrate-go');
+  if (!libId) return;
+
+  _migrating = true;
+  goBtn.disabled = true;
+  document.getElementById('btn-migrate-cancel').disabled = true;
+  status.textContent = 'Démarrage…';
+  status.className   = 'status-msg';
+
+  let d;
+  try {
+    d = await fetch(`/api/collection/series/${SERIES_SLUG}/migrate`, {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ lib_id: libId }),
+    }).then(r => r.json());
+  } catch (e) { d = { ok: false, message: 'Erreur réseau' }; }
+
+  if (!d.ok) {
+    _migrating = false;
+    goBtn.disabled = false;
+    document.getElementById('btn-migrate-cancel').disabled = false;
+    status.textContent = d.message || 'Erreur';
+    status.className   = 'status-msg error';
+    return;
+  }
+  status.textContent = d.message || 'Migration en cours…';
+  document.getElementById('migrate-progress').style.display = '';
+
+  // Suivi de la progression
+  while (true) {
+    await new Promise(r => setTimeout(r, 800));
+    const st = await apiFetch('/collection/migrate-status');
+    if (st.total) {
+      const pct = Math.round((st.done / st.total) * 100);
+      document.getElementById('migrate-progress-fill').style.width = pct + '%';
+      document.getElementById('migrate-progress-label').textContent =
+        `${st.done} / ${st.total} fichier(s)` + (st.current ? ` — ${st.current}` : '');
+    }
+    if (st.ok === false) continue;           // erreur réseau ponctuelle
+    if (!st.running) {
+      _migrating = false;
+      const res = st.result || {};
+      if (res.ok) {
+        document.getElementById('migrate-progress-fill').style.width = '100%';
+        status.textContent = (res.message || 'Migration terminée') + ' ✓';
+        status.className   = 'status-msg ok';
+        // L'identifiant de la série change avec son chemin → nouvelle URL
+        setTimeout(() => { window.location.href = `/series/${res.slug}`; }, 1200);
+      } else {
+        goBtn.disabled = false;
+        document.getElementById('btn-migrate-cancel').disabled = false;
+        status.textContent = res.message || 'Erreur pendant la migration';
+        status.className   = 'status-msg error';
+      }
+      return;
+    }
+  }
+}
 </script>
 <style>
 .book-edit-btn {

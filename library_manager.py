@@ -186,6 +186,115 @@ def resolve_slug(slug: str) -> dict | None:
 
 
 # ════════════════════════════════════════════════════════
+# MIGRATION : déplacer une série vers une autre librairie
+# ════════════════════════════════════════════════════════
+
+def check_migration(series_id: str, target_lib_id: str) -> dict:
+    """
+    Vérifie qu'une série peut être déplacée vers une autre librairie.
+    Retourne {ok, message, series, target, dest_dir}.
+    """
+    info = get_series_by_id(series_id)
+    if not info:
+        return {"ok": False, "message": "Série introuvable"}
+    target = get_library(target_lib_id)
+    if not target:
+        return {"ok": False, "message": "Librairie de destination introuvable"}
+    if target_lib_id == info["lib_id"]:
+        return {"ok": False, "message": "La série est déjà dans cette librairie"}
+    if not os.path.isdir(target["path"]):
+        return {"ok": False, "message": f"Dossier de la librairie inaccessible : {target['path']}"}
+
+    src_dir  = os.path.realpath(info["path"])
+    dest_dir = os.path.join(target["path"], info["name"])
+    real_target = os.path.realpath(target["path"])
+    if real_target == src_dir or real_target.startswith(src_dir + os.sep):
+        return {"ok": False, "message": "La librairie de destination est à l'intérieur du dossier de la série"}
+    if os.path.exists(dest_dir):
+        return {"ok": False,
+                "message": f"Un dossier « {info['name']} » existe déjà dans la librairie {target['name']}"}
+    return {"ok": True, "series": info, "target": target, "dest_dir": dest_dir}
+
+
+def migrate_series(series_id: str, target_lib_id: str, progress=None) -> dict:
+    """
+    Déplace le dossier d'une série dans le dossier d'une autre librairie.
+    - même disque : simple renommage (instantané)
+    - disques différents : copie fichier par fichier (progression), vérification
+      des tailles, puis suppression de l'original. En cas d'erreur, la copie
+      partielle est supprimée et l'original reste intact.
+    progress(done, total, current_filename) est appelé pendant la copie.
+    Retourne {ok, message, old_id, new_id, slug, dest_dir, old_lib_id, new_lib_id}.
+    """
+    import shutil, errno
+    chk = check_migration(series_id, target_lib_id)
+    if not chk["ok"]:
+        return chk
+    info, target, dest_dir = chk["series"], chk["target"], chk["dest_dir"]
+    src_dir = info["path"]
+
+    moved = False
+    try:
+        os.rename(src_dir, dest_dir)
+        moved = True
+    except OSError as e:
+        if e.errno not in (errno.EXDEV, errno.EPERM, errno.EACCES, errno.ENOTSUP):
+            return {"ok": False, "message": f"Déplacement impossible : {e}"}
+
+    if not moved:
+        # Copie inter-disques avec progression
+        files = []
+        for root, _dirs, fnames in os.walk(src_dir):
+            for fn in fnames:
+                files.append(os.path.join(root, fn))
+        total = len(files)
+        try:
+            os.makedirs(dest_dir)
+            for i, fp in enumerate(files):
+                rel = os.path.relpath(fp, src_dir)
+                out = os.path.join(dest_dir, rel)
+                os.makedirs(os.path.dirname(out), exist_ok=True)
+                if progress:
+                    progress(i, total, rel)
+                shutil.copy2(fp, out)
+                if os.path.getsize(out) != os.path.getsize(fp):
+                    raise OSError(f"Taille différente après copie : {rel}")
+            # Sous-dossiers vides éventuels
+            for root, dirs, _f in os.walk(src_dir):
+                for d in dirs:
+                    os.makedirs(os.path.join(dest_dir, os.path.relpath(os.path.join(root, d), src_dir)),
+                                exist_ok=True)
+            if progress:
+                progress(total, total, "")
+        except Exception as e:
+            shutil.rmtree(dest_dir, ignore_errors=True)
+            return {"ok": False, "message": f"Copie échouée, série laissée en place : {e}"}
+        try:
+            shutil.rmtree(src_dir)
+        except Exception as e:
+            _cfg.add_log(f"[Migration] Copie OK mais suppression de l'original impossible : {e}", "warning")
+
+    new_id = _series_id(dest_dir)
+    with _INDEX_LOCK:
+        _SERIES_INDEX.pop(series_id, None)
+        _SERIES_INDEX[new_id] = (target_lib_id, dest_dir, info["name"])
+    clear_cover_cache(series_id)
+
+    _cfg.add_log(f"[Migration] « {info['name']} » : {src_dir} → {dest_dir}", "info")
+    return {
+        "ok":         True,
+        "message":    f"« {info['name']} » déplacée dans la librairie {target['name']}",
+        "old_id":     series_id,
+        "new_id":     new_id,
+        "slug":       _slugify(info["name"]) + "--" + new_id,
+        "dest_dir":   dest_dir,
+        "old_lib_id": info["lib_id"],
+        "new_lib_id": target_lib_id,
+        "name":       info["name"],
+    }
+
+
+# ════════════════════════════════════════════════════════
 # COVERS — EXTRACTION ET CACHE
 # ════════════════════════════════════════════════════════
 

@@ -2380,9 +2380,95 @@ def api_series_detail(series_slug):
         "mangadb":      manga_meta,
         "mangadbTomes": mangadb_tomes,
         "libraryId":    lib_id,
+        "libraryName":  (lib_mgr.get_library(lib_id) or {}).get("name", ""),
         "diskPath":     series_info["path"],
         "source_name":  source_name,
     })
+
+
+# ════════════════════════════════════════════════════════
+# SERIES — MIGRATION VERS UNE AUTRE LIBRAIRIE
+# ════════════════════════════════════════════════════════
+
+_migrate_lock = threading.Lock()
+_migrate_task = {"running": False, "done": 0, "total": 0, "current": "",
+                 "name": "", "target": "", "result": None}
+
+
+def _set_migrate(**kw):
+    with _migrate_lock:
+        _migrate_task.update(kw)
+
+
+def _after_migration(res: dict):
+    """Met à jour métadonnées et queue après le déplacement d'une série."""
+    old_lib, new_lib = res["old_lib_id"], res["new_lib_id"]
+    old_meta = cache_mod.get_series_meta(old_lib, res["old_id"]) or {}
+    # On garde les métadonnées si l'association est manuelle ou si les deux
+    # librairies utilisent la même source ; sinon elles seront ré-associées
+    # automatiquement avec la source de la nouvelle librairie (BD, Comics…).
+    keep = bool(old_meta.get("_manual") or old_meta.get("_dissociated")) or \
+        _linked_metadata_source(old_lib) == _linked_metadata_source(new_lib)
+    cache_mod.move_series_meta(old_lib, res["old_id"], new_lib, res["new_id"], keep=keep)
+
+    # Les téléchargements en attente pour cette série suivent la série
+    name_l = res["name"].strip().lower()
+    with queue_manager._queue_lock:
+        items   = queue_manager._load()
+        changed = 0
+        for it in items:
+            if (it.get("status") != "done"
+                    and it.get("series_name", "").strip().lower() == name_l
+                    and it.get("library_id") == old_lib):
+                it["library_id"] = new_lib
+                changed += 1
+        if changed:
+            queue_manager._save(items)
+    return changed
+
+
+@app.route("/api/collection/series/<path:series_slug>/migrate", methods=["POST"])
+def api_series_migrate(series_slug):
+    """
+    Déplace le dossier d'une série dans une autre librairie (en arrière-plan).
+    Body : {lib_id}. Suivi via GET /api/collection/migrate-status.
+    """
+    d      = request.json or {}
+    lib_id = (d.get("lib_id") or "").strip()
+    info   = lib_mgr.resolve_slug(series_slug)
+    if not info:
+        return jsonify({"ok": False, "message": "Série introuvable"})
+    chk = lib_mgr.check_migration(info["id"], lib_id)
+    if not chk["ok"]:
+        return jsonify({"ok": False, "message": chk["message"]})
+
+    with _migrate_lock:
+        if _migrate_task["running"]:
+            return jsonify({"ok": False, "message": f"Une migration est déjà en cours ({_migrate_task['name']})"})
+        _migrate_task.update(running=True, done=0, total=0, current="",
+                             name=info["name"], target=chk["target"]["name"], result=None)
+
+    def _run(series_id, target_id):
+        try:
+            res = lib_mgr.migrate_series(
+                series_id, target_id,
+                progress=lambda done, total, cur: _set_migrate(done=done, total=total, current=cur))
+            if res.get("ok"):
+                res["queue_updated"] = _after_migration(res)
+            _set_migrate(running=False, current="", result=res)
+        except Exception as e:
+            app.logger.error(f"[Migration] {e}", exc_info=True)
+            _set_migrate(running=False, current="", result={"ok": False, "message": str(e)})
+
+    threading.Thread(target=_run, args=(info["id"], lib_id), daemon=True).start()
+    return jsonify({"ok": True, "started": True,
+                    "message": f"Migration de « {info['name']} » vers {chk['target']['name']}…"})
+
+
+@app.route("/api/collection/migrate-status")
+def api_migrate_status():
+    with _migrate_lock:
+        return jsonify(dict(_migrate_task))
 
 
 # ════════════════════════════════════════════════════════
