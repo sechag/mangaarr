@@ -545,6 +545,7 @@
   let _history       = [];
   let _ed2kLinks     = [];   // [{url, filename, tome_number}]
   let _activeSeries  = null;
+  let _activeSeriesLib = '';  // librairie où la série existe déjà (si choisie dans la collection)
   let _pendingAnchor = null; // fragment à scroller après chargement de l'iframe
   let _allSeries     = [];
   let _allSeriesByLib = {};  // lib_id → series[]
@@ -627,6 +628,17 @@
   // ════════════════════════════════
   function setActiveSeries(name, fromCollection = false) {
     _activeSeries = name;
+    // Si la série vient de la collection, on retient la librairie où elle se trouve
+    _activeSeriesLib = '';
+    if (name && fromCollection) {
+      const sel = _selectedLibId();
+      if (sel && (_allSeriesByLib[sel] || []).includes(name)) {
+        _activeSeriesLib = sel;
+      } else {
+        const hit = Object.keys(_allSeriesByLib).find(id => (_allSeriesByLib[id] || []).includes(name));
+        _activeSeriesLib = hit || '';
+      }
+    }
     const el = document.getElementById('sb-series-name');
     const info = document.getElementById('sb-tomes-info');
     if (name) {
@@ -666,7 +678,9 @@
     elMiss.textContent  = '';
     info.style.display  = 'block';
     try {
-      const r = await fetch(`/api/ebdz-browser/series-tomes?name=${encodeURIComponent(name)}`).then(r => r.json());
+      const libId = _destLibId();
+      const r = await fetch(`/api/ebdz-browser/series-tomes?name=${encodeURIComponent(name)}`
+                            + (libId ? `&lib_id=${encodeURIComponent(libId)}` : '')).then(r => r.json());
       if (!r.ok) { info.style.display = 'none'; return; }
       const owned = r.owned_detail || (r.owned || []).map(n => ({ numero: n, tag: '' }));
       if (owned.length) {
@@ -739,6 +753,24 @@
     } catch(e) {}
   }
 
+  function _selectedLibId() {
+    const sel = document.getElementById('sb-library-sel');
+    return sel ? sel.value : '';
+  }
+
+  // Librairie de destination des téléchargements :
+  // 1) celle sélectionnée dans « Librairie » ; 2) sinon celle où la série existe déjà.
+  // Vide → le serveur cherche la série dans toutes les librairies.
+  function _destLibId() {
+    return _selectedLibId() || _activeSeriesLib || '';
+  }
+
+  function _libName(id) {
+    const sel = document.getElementById('sb-library-sel');
+    const opt = sel ? [...sel.options].find(o => o.value === id) : null;
+    return opt ? opt.textContent : '';
+  }
+
   function _getActiveLibSeries() {
     const sel = document.getElementById('sb-library-sel');
     const libId = sel ? sel.value : '';
@@ -746,6 +778,8 @@
   }
 
   function filterSidebarByLib() {
+    updateFooter();
+    if (_activeSeries && _selectedLibId()) loadSeriesTomes(_activeSeries);
     const list = _getActiveLibSeries();
     renderCollectionResults(list.slice(0, 40));
     const q = (document.getElementById('col-search') || {}).value || '';
@@ -782,7 +816,9 @@
     _mdbTimer = setTimeout(async () => {
       document.getElementById('mdb-note').textContent = 'Recherche…';
       try {
-        const r = await fetch(`/api/collection/add-search?q=${encodeURIComponent(q)}`).then(r => r.json());
+        const libId = _selectedLibId();
+        const r = await fetch(`/api/collection/add-search?q=${encodeURIComponent(q)}`
+                              + (libId ? `&lib_id=${encodeURIComponent(libId)}` : '')).then(r => r.json());
         const items = (r.results || []).slice(0, 5);
         document.getElementById('mdb-note').textContent = '';
         const ul = document.getElementById('mdb-results');
@@ -962,7 +998,10 @@
       info.textContent = 'Sélectionnez une série';
       info.style.color = 'var(--warning)';
     } else if (count > 0) {
-      info.textContent = `${count} lien${count>1?'s':''} · ${_activeSeries}`;
+      const libName = _libName(_destLibId());
+      info.textContent = `${count} lien${count>1?'s':''} · ${_activeSeries}`
+                       + (libName ? ` → ${libName}` : '');
+      info.title = libName ? `Destination : librairie « ${libName} »` : '';
       info.style.color = 'var(--text-dim)';
     } else {
       info.textContent = '';
@@ -1062,7 +1101,7 @@
       const r = await fetch('/api/amule/add-links', {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({ series_name: _activeSeries, items }),
+        body: JSON.stringify({ series_name: _activeSeries, library_id: _destLibId(), items }),
       }).then(r => r.json());
 
       if (r.ok) {

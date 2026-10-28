@@ -58,54 +58,83 @@ def get_library(lib_id: str) -> dict | None:
 # SCAN : séries dans une librairie
 # ════════════════════════════════════════════════════════
 
+def _build_series(lib_id: str, series_dir: str, entry: str) -> dict:
+    """Construit les infos d'UNE série (liste de ses tomes) sans scanner toute la librairie."""
+    import renamer as _r
+    try:
+        files = sorted(
+            f for f in os.listdir(series_dir)
+            if f.lower().endswith((".cbz", ".cbr", ".pdf"))
+        )
+    except OSError:
+        files = []
+    # On garde même les dossiers vides (série ajoutée mais sans fichiers encore)
+
+    # Extrait les numéros de tomes
+    tomes = []
+    for fn in files:
+        t = _r.detect_tome(fn)
+        n = int(t.lstrip("T").lstrip("0") or "0") if t else None
+        tomes.append({"filename": fn, "numero": n})
+
+    tomes_sorted = sorted(tomes, key=lambda x: x["numero"] or 0)
+    first_file   = os.path.join(series_dir, tomes_sorted[0]["filename"]) if tomes_sorted else None
+
+    series_id = _series_id(series_dir)
+    return {
+        "id":          series_id,
+        "name":        entry,
+        "path":        series_dir,
+        "lib_id":      lib_id,
+        "booksCount":  len(files),
+        "tomes":       tomes_sorted,
+        "first_file":  first_file,
+        "thumbnail":   f"/api/local/series/{series_id}/thumbnail",
+        "slug":        _slugify(entry) + "--" + series_id,
+    }
+
+
+def _list_series_dirs(root: str) -> list:
+    """Retourne [(entry, full_path)] des sous-dossiers d'une librairie, triés par nom."""
+    out = []
+    try:
+        with os.scandir(root) as it:
+            for de in it:
+                try:
+                    if de.is_dir():
+                        out.append((de.name, de.path))
+                except OSError:
+                    continue
+    except OSError:
+        return []
+    out.sort(key=lambda x: x[0])
+    return out
+
+
 def scan_library(lib_id: str) -> list:
     """
     Scanne une librairie et retourne la liste des séries avec leurs tomes.
     Utilise le cache image pour les covers.
     """
-    import renamer as _r
     lib = get_library(lib_id)
     if not lib or not os.path.isdir(lib["path"]):
         return []
 
-    series_list = []
-    root = lib["path"]
+    series_list = [_build_series(lib_id, series_dir, entry)
+                   for entry, series_dir in _list_series_dirs(lib["path"])]
 
-    for entry in sorted(os.listdir(root)):
-        series_dir = os.path.join(root, entry)
-        if not os.path.isdir(series_dir):
-            continue
-
-        files = sorted([
-            f for f in os.listdir(series_dir)
-            if f.lower().endswith((".cbz", ".cbr", ".pdf"))
-        ])
-        # On garde même les dossiers vides (série ajoutée mais sans fichiers encore)
-
-        # Extrait les numéros de tomes
-        tomes = []
-        for fn in files:
-            t = _r.detect_tome(fn)
-            n = int(t.lstrip("T").lstrip("0") or "0") if t else None
-            tomes.append({"filename": fn, "numero": n})
-
-        tomes_sorted = sorted(tomes, key=lambda x: x["numero"] or 0)
-        first_file   = os.path.join(series_dir, tomes_sorted[0]["filename"]) if tomes_sorted else None
-
-        series_id = _series_id(series_dir)
-        series_list.append({
-            "id":          series_id,
-            "name":        entry,
-            "path":        series_dir,
-            "lib_id":      lib_id,
-            "booksCount":  len(files),
-            "tomes":       tomes_sorted,
-            "first_file":  first_file,
-            "thumbnail":   f"/api/local/series/{series_id}/thumbnail",
-            "slug":        _slugify(entry) + "--" + series_id,
-        })
+    # Mémorise l'index id → dossier pour les recherches unitaires (covers…)
+    with _INDEX_LOCK:
+        for s in series_list:
+            _SERIES_INDEX[s["id"]] = (lib_id, s["path"], s["name"])
 
     return series_list
+
+
+# Index id série → (lib_id, dossier, nom) : évite de rescanner toute la
+# librairie à chaque vignette (O(n²) sur les grosses collections).
+_SERIES_INDEX: dict = {}
+_INDEX_LOCK = threading.Lock()
 
 
 def _series_id(path: str) -> str:
@@ -124,18 +153,28 @@ def _slugify(name: str) -> str:
 
 
 def get_series_by_id(series_id: str) -> dict | None:
-    """Cherche une série dans toutes les librairies par son ID."""
+    """Cherche une série dans toutes les librairies par son ID (sans scan complet)."""
+    # 1. Index mémoire (rempli par scan_library et les recherches précédentes)
+    with _INDEX_LOCK:
+        hit = _SERIES_INDEX.get(series_id)
+    if hit:
+        lib_id, series_dir, entry = hit
+        if os.path.isdir(series_dir) and get_library(lib_id):
+            return _build_series(lib_id, series_dir, entry)
+        with _INDEX_LOCK:
+            _SERIES_INDEX.pop(series_id, None)
+
+    # 2. Recherche par hash du chemin : un seul listdir par librairie
     for lib in get_libraries():
         lib_id = lib["id"]
         root   = lib["path"]
         if not os.path.isdir(root):
             continue
-        for entry in os.listdir(root):
-            series_dir = os.path.join(root, entry)
-            if os.path.isdir(series_dir) and _series_id(series_dir) == series_id:
-                # Reconstruit les infos
-                series_list = scan_library(lib_id)
-                return next((s for s in series_list if s["id"] == series_id), None)
+        for entry, series_dir in _list_series_dirs(root):
+            if _series_id(series_dir) == series_id:
+                with _INDEX_LOCK:
+                    _SERIES_INDEX[series_id] = (lib_id, series_dir, entry)
+                return _build_series(lib_id, series_dir, entry)
     return None
 
 

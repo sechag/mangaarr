@@ -115,18 +115,41 @@ async function loadCollection() {
     libSel.innerHTML = libs.map(l =>
       `<option value="${esc(l.id)}">${esc(l.name)}</option>`
     ).join('');
-    libSel.onchange = () => { _curPage = 1; loadSeries(libSel.value); };
+    libSel.onchange = () => {
+      _curPage = 1;
+      loadSeries(libSel.value);
+      _updateAddTargetLabel();
+    };
   }
-  loadSeries(libs[0].id);
+  _updateAddTargetLabel();
+  loadSeries(libSel ? libSel.value : libs[0].id);
 }
+
+let _seriesReqId = 0;   // ignore les réponses d'une librairie qui n'est plus sélectionnée
 
 async function loadSeries(libraryId) {
   const grid = document.getElementById('series-grid');
+  const pag  = document.getElementById('pagination');
+  const reqId = ++_seriesReqId;
   // Skeleton immédiat pour éviter le freeze visuel
   grid.innerHTML = Array(6).fill('<div class="series-card" style="opacity:.3;pointer-events:none"><div style="height:200px;background:var(--bg-input);border-radius:8px"></div></div>').join('');
+  if (pag) pag.innerHTML = '';
   stopEnrichPoll();
 
-  const d = await api(`/collection/series?library_id=${libraryId}`);
+  // Les grosses collections (NAS, milliers de séries) peuvent mettre bien plus
+  // que les 30 s par défaut à être listées : on laisse jusqu'à 5 min.
+  const d = await api(`/collection/series?library_id=${encodeURIComponent(libraryId)}`, 'GET', null, 300000);
+  if (reqId !== _seriesReqId) return;   // une autre librairie a été demandée entre-temps
+
+  if (!d.series) {
+    _allSeries = [];
+    _filteredSeries = [];
+    grid.innerHTML = `<div class="empty-state" style="grid-column:1/-1;text-align:center;padding:40px">
+        <div style="margin-bottom:12px">Impossible de charger la collection : ${esc(d.message || 'erreur serveur')}</div>
+        <button class="btn btn-primary" onclick="loadSeries('${esc(libraryId)}')">Réessayer</button>
+      </div>`;
+    return;
+  }
   _allSeries = d.series || [];
   _curPage = 1;
   // Applique le tri A->Z par défaut via filterSeries
@@ -138,25 +161,22 @@ async function loadSeries(libraryId) {
   }
 }
 
+// N'insère dans le DOM que les cartes de la page courante : avec des milliers
+// de séries, générer toutes les cartes d'un coup figeait l'affichage.
 function renderPage() {
-  _applyPageVisibility();
+  const totalPages = Math.max(1, Math.ceil(_filteredSeries.length / _perPage));
+  if (_curPage > totalPages) _curPage = totalPages;
+  const start = (_curPage - 1) * _perPage;
+  renderSeries(_filteredSeries.slice(start, start + _perPage), start);
   renderPagination(_filteredSeries.length);
 }
 
-function _applyPageVisibility() {
-  const start = (_curPage - 1) * _perPage;
-  const end   = start + _perPage;
-  document.querySelectorAll('#series-grid .series-card[data-series-idx]').forEach(card => {
-    const idx = parseInt(card.dataset.seriesIdx, 10);
-    card.style.display = (idx >= start && idx < end) ? '' : 'none';
-  });
-}
-
-function renderSeries(series) {
+function renderSeries(series, offset = 0) {
   const grid = document.getElementById('series-grid');
   if (!series.length) { grid.innerHTML = emptyState('Aucune série'); return; }
 
-  grid.innerHTML = series.map((s, idx) => {
+  grid.innerHTML = series.map((s, i) => {
+    const idx = offset + i;
     const hasProgress = s.totalVF && s.totalVF > 0;
     const pct = hasProgress ? Math.min(100, Math.round((s.booksCount / s.totalVF) * 100)) : 0;
     const initial = (s.name || '?')[0].toUpperCase();
@@ -301,7 +321,6 @@ function filterSeries() {
 
   _filteredSeries = result;
   _curPage = 1;
-  renderSeries(_filteredSeries);
   renderPage();
 }
 
@@ -2280,15 +2299,14 @@ async function searchSeriesToAdd() {
   results.innerHTML = '<span style="color:var(--text-dim);font-size:12px">Recherche…</span>';
   if (status) status.textContent = '';
 
-  // Cherche dans MangaDB
-  const d = await api(`/collection/series/any--any/mangadb-search?q=${encodeURIComponent(q)}`);
+  // Cherche dans la source metadata liée à la librairie sélectionnée
+  const libId = _addTargetLibId();
+  const d = await api(`/collection/add-search?q=${encodeURIComponent(q)}&lib_id=${encodeURIComponent(libId)}`);
 
   if (!d.ok || !d.results?.length) {
     results.innerHTML = '<span style="color:var(--text-dim);font-size:12px">Aucun résultat dans MangaDB.</span>';
     return;
   }
-
-  const libId = (document.getElementById('library-select') || {}).value || '';
 
   results.innerHTML = d.results.map(r => {
     const srcBadge = r.source_name
@@ -2300,32 +2318,59 @@ async function searchSeriesToAdd() {
         <div style="font-size:13px;font-weight:500;display:flex;align-items:center;gap:8px">${esc(r.titre)}${srcBadge}</div>
         <div style="font-size:11px;color:var(--text-dim)">${esc(r.auteur||'')} · ${esc(r.statut||'')}</div>
       </div>
-      <button class="btn btn-sm btn-primary"
-              onclick="addSeriesToLibrary('${esc(r.titre)}', '${esc(libId)}')">
+      <button class="btn btn-sm btn-primary add-series-btn" data-titre="${esc(r.titre)}">
         + Ajouter
       </button>
     </div>`;
   }).join('');
+  // Le titre passe par un data-attribute (et non dans un onclick inline) :
+  // une apostrophe (« L'Attaque des Titans ») cassait le clic, qui n'ajoutait rien.
+  results.querySelectorAll('.add-series-btn').forEach(btn => {
+    btn.addEventListener('click', () => addSeriesToLibrary(btn.dataset.titre, null, btn));
+  });
 }
 
-async function addSeriesToLibrary(mangadbTitre, libId) {
+function _addTargetLibId() {
+  return (document.getElementById('library-select') || {}).value || '';
+}
+
+function _updateAddTargetLabel() {
+  const el  = document.getElementById('add-series-target');
+  const sel = document.getElementById('library-select');
+  if (!el || !sel) return;
+  const opt = sel.options[sel.selectedIndex];
+  el.textContent = opt && opt.value ? opt.textContent : '—';
+}
+
+async function addSeriesToLibrary(mangadbTitre, libId, btn) {
   const status = document.getElementById('add-series-status');
+  // La librairie est lue AU MOMENT DU CLIC (et non lors de la recherche) :
+  // changer de librairie après la recherche ajoutait sinon dans l'ancienne.
+  libId = libId || _addTargetLibId();
   if (!libId) {
     if (status) { status.textContent = 'Sélectionnez une librairie'; status.className = 'status-msg error'; }
     return;
   }
+  if (!mangadbTitre) return;
+  if (btn) { if (btn.disabled) return; btn.disabled = true; btn.textContent = 'Ajout…'; }
   if (status) { status.textContent = 'Création…'; status.className = 'status-msg'; }
 
-  const d = await api(`/libraries/${libId}/create-series`, 'POST', {
+  const d = await api(`/libraries/${encodeURIComponent(libId)}/create-series`, 'POST', {
     name: mangadbTitre, mangadb_titre: mangadbTitre
-  });
+  }, 60000);
+  if (btn) { btn.disabled = false; btn.textContent = d.ok ? '✓ Ajoutée' : '+ Ajouter'; }
 
   if (status) {
     status.textContent = d.message || (d.ok ? 'Créée ✓' : 'Erreur');
     status.className   = 'status-msg ' + (d.ok ? 'ok' : 'error');
   }
   if (d.ok) {
-    setTimeout(() => { switchCollectionTab('browse'); loadSeries(libId); }, 1000);
+    setTimeout(() => {
+      const sel = document.getElementById('library-select');
+      if (sel && sel.value !== libId) { sel.value = libId; _updateAddTargetLabel(); }
+      switchCollectionTab('browse');
+      loadSeries(libId);
+    }, 1000);
   }
 }
 

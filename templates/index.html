@@ -149,6 +149,7 @@
       <div class="settings-card">
         <h2>Ajouter une série</h2>
         <p class="hint">Recherchez une série dans la base de données liée à la librairie sélectionnée. Le dossier sera créé automatiquement.</p>
+        <p class="hint" style="margin-top:-4px">Librairie de destination : <strong id="add-series-target" style="color:var(--accent)">—</strong> <span style="color:var(--text-dim)">(sélecteur en haut de la page)</span></p>
         <div style="display:flex;gap:8px;margin-bottom:16px">
           <input type="text" id="add-series-search" class="text-input" placeholder="Nom de la série…"
                  onkeydown="if(event.key==='Enter') searchSeriesToAdd()"

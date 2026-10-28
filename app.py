@@ -411,46 +411,52 @@ def api_ebdz_series_tomes():
     GET /api/ebdz-browser/series-tomes?name=Dragon+Ball
     Retourne {ok, owned: [1,2,3], missing: [4,5], total: 5, slug: "name--id"}
     """
-    name = request.args.get("name", "").strip()
+    name   = request.args.get("name", "").strip()
+    lib_id = request.args.get("lib_id", "").strip()
     if not name:
         return jsonify({"ok": False})
     name_lower = name.lower()
-    for lib in lib_mgr.get_libraries():
-        try:
-            series_list = lib_mgr.scan_library(lib["id"])
-        except Exception:
-            continue
-        for s in series_list:
-            if s["name"].lower() == name_lower:
-                # Tag par tome (garde le meilleur score si plusieurs fichiers pour un tome)
-                tome_tags = {}
-                for t in s.get("tomes", []):
-                    n = t.get("numero")
-                    if n is None:
-                        continue
-                    fn  = t.get("filename", "")
-                    tag = profiles.detect_tag(fn) if fn else "Notag"
-                    score = profiles.get_tag_score(tag)
-                    if n not in tome_tags or score > tome_tags[n]["score"]:
-                        tome_tags[n] = {"tag": tag, "score": score}
-                owned = sorted(tome_tags.keys())
-                owned_detail = [{"numero": n, "tag": tome_tags[n]["tag"]} for n in owned]
-                meta  = cache_mod.get_series_meta(lib["id"], s["id"]) or {}
-                total = 0
-                try:
-                    total = int(meta.get("tomes_vf") or 0)
-                except Exception:
-                    pass
-                missing = [n for n in range(1, total + 1) if n not in owned] if total else []
-                return jsonify({
-                    "ok":           True,
-                    "name":         s["name"],
-                    "owned":        owned,
-                    "owned_detail": owned_detail,
-                    "missing":      missing,
-                    "total":        total,
-                    "slug":         f"{s['name']}--{s['id']}",
-                })
+    libraries  = lib_mgr.get_libraries()
+    if lib_id:
+        # Librairie sélectionnée dans la navigation : on ne regarde qu'elle
+        libraries = [l for l in libraries if l["id"] == lib_id]
+    for lib in libraries:
+        # Ne construit que la série trouvée (pas de scan complet de la librairie)
+        matches = [
+            lib_mgr._build_series(lib["id"], full, entry)
+            for entry, full in lib_mgr._list_series_dirs(lib.get("path", ""))
+            if entry.lower() == name_lower
+        ]
+        for s in matches:
+            # Tag par tome (garde le meilleur score si plusieurs fichiers pour un tome)
+            tome_tags = {}
+            for t in s.get("tomes", []):
+                n = t.get("numero")
+                if n is None:
+                    continue
+                fn  = t.get("filename", "")
+                tag = profiles.detect_tag(fn) if fn else "Notag"
+                score = profiles.get_tag_score(tag)
+                if n not in tome_tags or score > tome_tags[n]["score"]:
+                    tome_tags[n] = {"tag": tag, "score": score}
+            owned = sorted(tome_tags.keys())
+            owned_detail = [{"numero": n, "tag": tome_tags[n]["tag"]} for n in owned]
+            meta  = cache_mod.get_series_meta(lib["id"], s["id"]) or {}
+            total = 0
+            try:
+                total = int(meta.get("tomes_vf") or 0)
+            except Exception:
+                pass
+            missing = [n for n in range(1, total + 1) if n not in owned] if total else []
+            return jsonify({
+                "ok":           True,
+                "name":         s["name"],
+                "owned":        owned,
+                "owned_detail": owned_detail,
+                "missing":      missing,
+                "total":        total,
+                "slug":         f"{s['name']}--{s['id']}",
+            })
     return jsonify({"ok": False, "message": "Série non trouvée dans la collection"})
 
 
@@ -1169,6 +1175,7 @@ def api_ebdz_add_ed2k():
     d           = request.json or {}
     url         = d.get("url", "").strip()
     series_name = d.get("series_name", "").strip()
+    library_id  = d.get("library_id", "").strip()
     if not url or not url.lower().startswith("ed2k://"):
         return jsonify({"ok": False, "message": "Lien ed2k invalide"})
     parsed = ebdz_scraper.parse_ed2k(url)
@@ -1185,6 +1192,8 @@ def api_ebdz_add_ed2k():
         "series_exact": bool(series_name),  # nom fourni explicitement → pas de fuzzy
         "action":       "missing",
     }
+    if library_id and lib_mgr.get_library(library_id):
+        item["library_id"] = library_id
     r = queue_manager.add_to_queue([item])
     return jsonify({"ok": True, "added": r["added"], "skipped": r["skipped"],
                     "filename": parsed["filename"]})
@@ -1216,6 +1225,10 @@ def api_amule_add_links():
     d           = request.json or {}
     series_name = d.get("series_name", "").strip()
     items_in    = d.get("items", [])
+    # Librairie de destination choisie dans la navigation eBDZ (BD, Comics…)
+    library_id  = d.get("library_id", "").strip()
+    if library_id and not lib_mgr.get_library(library_id):
+        library_id = ""
 
     if not items_in:
         return jsonify({"ok": False, "message": "Aucun lien ed2k fourni"})
@@ -1239,6 +1252,7 @@ def api_amule_add_links():
             "series_name":  series_name,
             "series_exact": True,
             "action":       it.get("action", "missing"),
+            **({"library_id": library_id} if library_id else {}),
         })
 
     if not items:
@@ -1758,8 +1772,23 @@ def api_collection_add_search():
     lib_id = request.args.get("lib_id", "")
     if not q:
         return jsonify({"ok": False, "results": []})
-    results = mangadb_client.search_series(q)
+    # Filtre sur la source metadata liée à la librairie (BD, Comics…) si elle existe
+    src_id  = _linked_metadata_source(lib_id)
+    results = mangadb_client.search_series(q, source_id=src_id)
+    for r in results:
+        # Champs attendus par le panneau « Ajouter une série » de la Collection
+        r.setdefault("auteur", "")
+        r.setdefault("statut", r.get("statut_vf", ""))
     return jsonify({"ok": True, "results": results[:12], "lib_id": lib_id})
+
+
+def _linked_metadata_source(lib_id: str):
+    """Id de la première source metadata liée à la librairie, ou None (= toutes)."""
+    if not lib_id:
+        return None
+    sources = config.get("metadata_sources", [])
+    linked  = [s for s in sources if lib_id in (s.get("library_ids") or [])]
+    return linked[0].get("id") if linked else None
 
 
 @app.route("/api/collection/series/add", methods=["POST"])
@@ -2190,7 +2219,7 @@ def api_create_series(lib_id):
         # Si on a un titre MangaDB → pré-charge les metadata dans le cache
         if mangadb_titre:
             series_id = lib_mgr._series_id(series_dir)
-            meta = mangadb_client.find_best_match(mangadb_titre) or {}
+            meta = mangadb_client.find_best_match(mangadb_titre, _linked_metadata_source(lib_id)) or {}
             if meta:
                 cache_mod.set_series_meta(lib_id, series_id, meta)
 
@@ -3192,6 +3221,7 @@ def api_resolve_pending():
             "action":       action,
             "owned_file":   owned_file,
             "series_exact": item_ref.get("series_exact", False),
+            "library_id":   item_ref.get("library_id", ""),
         })
         if result.get("ok"):
             updated += 1
@@ -3471,6 +3501,7 @@ def _do_scan_incoming() -> dict:
                 "action":       action,
                 "owned_file":   owned_file,
                 "series_exact": item.get("series_exact", False),
+                "library_id":   item.get("library_id", ""),
             })
             if result.get("ok"):
                 dest = result.get("dest_path", "")

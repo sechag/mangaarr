@@ -199,6 +199,7 @@ def organize_file(item: dict | None = None, filepath: str | None = None) -> dict
         action       = item.get("action", "missing")    # "missing" ou "upgrade"
         owned_file   = item.get("owned_file", "")       # fichier à remplacer si upgrade
         series_exact = item.get("series_exact", False)  # nom de série fourni explicitement
+        target_lib   = item.get("library_id", "") or ""  # librairie choisie par l'utilisateur
     elif filepath:
         src_path     = filepath
         series_name  = None
@@ -206,6 +207,7 @@ def organize_file(item: dict | None = None, filepath: str | None = None) -> dict
         action       = "missing"
         owned_file   = ""
         series_exact = False
+        target_lib   = ""
     else:
         return {"ok": False, "message": "Aucun fichier fourni"}
 
@@ -229,6 +231,13 @@ def organize_file(item: dict | None = None, filepath: str | None = None) -> dict
     try:
         import library_manager as _lm, cache as _cache
         libraries   = _lm.get_libraries()
+        # Librairie imposée (ex : « BD » choisie dans la navigation eBDZ) :
+        # on ne cherche ET ne crée la série que dans celle-ci.
+        forced_lib  = next((l for l in libraries if l["id"] == target_lib), None) if target_lib else None
+        if target_lib and not forced_lib:
+            log(f"Librairie '{target_lib}' introuvable, recherche dans toutes les librairies")
+        if forced_lib:
+            libraries = [forced_lib]
         name_lower  = series_name.strip().lower()
         name_norm   = _cache._normalize(series_name)
 
